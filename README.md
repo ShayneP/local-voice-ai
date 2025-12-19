@@ -11,7 +11,7 @@
 This repo contains everything needed to run a real-time AI voice assistant locally using:
 
 - 🎙️ **LiveKit Agents** for STT ↔ LLM ↔ TTS
-- 🧠 **Ollama** for running local LLMs
+- 🧠 **llama.cpp** for running local LLMs
 - 🗣️ **Kokoro** for TTS voice synthesis
 - 👂 **Whisper (via VoxBox)** for speech-to-text
 - 🔍 **RAG** powered by Sentence Transformers and FAISS
@@ -37,7 +37,7 @@ Each service is containerized and communicates over a shared Docker network:
 - `livekit`: WebRTC signaling server
 - `agent`: Custom Python agent with LiveKit SDK
 - `whisper`: Speech-to-text using `vox-box` and Whisper model
-- `ollama`: Local LLM provider (e.g., `gemma3:4b`)
+- `llama_cpp`: Local LLM provider (e.g., `ggml-org/gemma-3-1b-it-GGUF`)
 - `kokoro`: TTS engine for speaking responses
 - `frontend`: React-based client using LiveKit components
 
@@ -45,7 +45,7 @@ Each service is containerized and communicates over a shared Docker network:
 
 Your agent lives in [`agent/myagent.py`](./agent/myagent.py). It uses:
 - `openai.STT` → routes to Whisper
-- `openai.LLM` → routes to Ollama
+- `openai.LLM` → routes to llama.cpp
 - `groq.TTS` → routes to Kokoro
 - `silero.VAD` → for voice activity detection
 - `SentenceTransformer` → embeds documents and queries for RAG
@@ -80,7 +80,7 @@ The services will restart and build fresh containers.
 ```
 .
 ├── agent/                     # Python voice agent
-├── ollama/                    # LLM serving
+├── llama_cpp/                 # LLM serving
 ├── whisper/                   # Whisper via vox-box
 ├── livekit/                   # Signaling server
 ├── voice-assistant-frontend/ # Next.js UI client
@@ -101,5 +101,5 @@ The services will restart and build fresh containers.
 
 - Built with ❤️ by [LiveKit](https://livekit.io/)
 - Uses [LiveKit Agents](https://docs.livekit.io/agents/)
-- Local LLMs via [Ollama](https://ollama.com/)
+- Local LLMs via [llama.cpp](https://github.com/ggml-org/llama.cpp)
 - TTS via [Kokoro](https://github.com/remsky/kokoro)

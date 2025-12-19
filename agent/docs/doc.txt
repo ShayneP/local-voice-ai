@@ -1,1 +1,0 @@
-We use a lightweight embedding model (all-MiniLM-L6-v2) for document retrieval

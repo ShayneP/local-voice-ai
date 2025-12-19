@@ -1,1 +1,0 @@
-Kokoro is used for text-to-speech (TTS)

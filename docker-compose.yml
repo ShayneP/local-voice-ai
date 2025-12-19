@@ -1,6 +1,9 @@
 services:
   kokoro:
-    image: ghcr.io/remsky/kokoro-fastapi-cpu:latest
+    build:
+      context: ./inference/kokoro
+      args:
+        KOKORO_IMAGE: ${KOKORO_IMAGE:-ghcr.io/remsky/kokoro-fastapi-cpu:latest}
     ports:
       - "8880:8880"
     networks:
@@ -17,9 +20,12 @@ services:
 
   whisper:
     build:
-      context: ./whisper
+      context: ./inference/whisper
     volumes:
       - whisper-data:/data
+    environment:
+      - VOXBOX_HF_REPO_ID=${VOXBOX_HF_REPO_ID:-Systran/faster-whisper-small}
+      - DATA_DIR=/data
     ports:
       - "11435:80"
     networks:
@@ -27,11 +33,14 @@ services:
 
   ollama:
     build:
-      context: ./ollama
+      context: ./inference/ollama
     ports:
       - "11434:11434"
     volumes:
       - ollama:/root/.ollama
+    environment:
+      - OLLAMA_HOST=${OLLAMA_HOST:-0.0.0.0:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-gemma3:4b}
     networks:
       - agent_network
     deploy:
@@ -41,16 +50,19 @@ services:
         reservations:
           memory: 6G
 
-  agent:
+  livekit_agent:
     build:
-      context: ./agent
+      context: ./livekit_agent
+    env_file:
+      - .env
     environment:
-      - LIVEKIT_HOST=ws://livekit:7880
-      - LIVEKIT_API_KEY=devkey
-      - LIVEKIT_API_SECRET=secret
-      - LIVEKIT_AGENT_PORT=7880
-      - OPENAI_API_KEY=no-key-needed
-      - GROQ_API_KEY=no-key-needed
+      - LIVEKIT_URL=${LIVEKIT_URL:-ws://livekit:7880}
+      - LIVEKIT_HOST=${LIVEKIT_URL:-ws://livekit:7880}
+      - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-devkey}
+      - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-secret}
+      - LIVEKIT_AGENT_PORT=${LIVEKIT_AGENT_PORT:-7880}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-no-key-needed}
+      - GROQ_API_KEY=${GROQ_API_KEY:-no-key-needed}
     depends_on:
       - livekit
       - kokoro
@@ -61,15 +73,13 @@ services:
 
   frontend:
     build:
-      context: ./voice-assistant-frontend
+      context: ./frontend
     ports:
       - "3000:3000"
     environment:
-      - NEXT_PUBLIC_LIVEKIT_URL=ws://localhost:7880
-      - LIVEKIT_URL=ws://livekit:7880
+      - LIVEKIT_URL=ws://localhost:7880
       - LIVEKIT_API_KEY=devkey
       - LIVEKIT_API_SECRET=secret
-      - NEXT_PUBLIC_LIVEKIT_API_KEY=devkey
     depends_on:
       - livekit
     networks:
