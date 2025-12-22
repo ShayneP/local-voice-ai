@@ -35,7 +35,7 @@ services:
     build:
       context: ./inference/ollama
     ports:
-      - "11434:11434"
+      - "${OLLAMA_HOST_PORT:-11436}:11434"
     volumes:
       - ollama:/root/.ollama
     environment:
