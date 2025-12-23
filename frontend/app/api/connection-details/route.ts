@@ -12,7 +12,7 @@ type ConnectionDetails = {
 // NOTE: you are expected to define the following environment variables in `.env.local`:
 const API_KEY = process.env.LIVEKIT_API_KEY;
 const API_SECRET = process.env.LIVEKIT_API_SECRET;
-const LIVEKIT_URL = process.env.LIVEKIT_URL;
+const LIVEKIT_URL = process.env.NEXT_PUBLIC_LIVEKIT_URL ?? process.env.LIVEKIT_URL;
 
 // don't cache the results
 export const revalidate = 0;
@@ -20,7 +20,7 @@ export const revalidate = 0;
 export async function POST(req: Request) {
   try {
     if (LIVEKIT_URL === undefined) {
-      throw new Error('LIVEKIT_URL is not defined');
+      throw new Error('NEXT_PUBLIC_LIVEKIT_URL or LIVEKIT_URL is not defined');
     }
     if (API_KEY === undefined) {
       throw new Error('LIVEKIT_API_KEY is not defined');
