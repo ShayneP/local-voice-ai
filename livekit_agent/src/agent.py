@@ -1,5 +1,6 @@
 import logging
 import os
+from typing import Any
 
 from dotenv import load_dotenv
 from livekit.agents import (
@@ -9,6 +10,8 @@ from livekit.agents import (
     JobContext,
     JobProcess,
     cli,
+    function_tool,
+    RunContext,
 )
 from livekit.plugins import silero, openai
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
@@ -26,6 +29,22 @@ class Assistant(Agent):
             You are curious, friendly, and have a sense of humor.""",
         )
 
+    @function_tool()
+    async def multiply_numbers(
+        self,
+        context: RunContext,
+        number1: int,
+        number2: int,
+    ) -> dict[str, Any]:
+        """Multiply two numbers.
+        
+        Args:
+            number1: The first number to multiply.
+            number2: The second number to multiply.
+        """
+
+        return f"The product of {number1} and {number2} is {number1 * number2}."
+
 server = AgentServer()
 
 def prewarm(proc: JobProcess):
@@ -39,21 +58,24 @@ async def my_agent(ctx: JobContext):
         "room": ctx.room.name,
     }
 
-    ollama_model = os.getenv("OLLAMA_MODEL", "gemma3:4b")
+    ollama_model = os.getenv("OLLAMA_MODEL", "ministral-3:8b")
 
     session = AgentSession(
         stt=openai.STT(
             base_url="http://whisper:80/v1",
+            # base_url="http://localhost:11435/v1", # uncomment for local testing
             model="Systran/faster-whisper-small",
             api_key="no-key-needed"
         ),
         llm=openai.LLM(
             base_url="http://ollama:11434/v1",
+            # base_url="http://localhost:11436/v1", # uncomment for local testing
             model=ollama_model,
             api_key="no-key-needed"
         ),
         tts=openai.TTS(
             base_url="http://kokoro:8880/v1",
+            # base_url="http://localhost:8880/v1", # uncomment for local testing
             model="kokoro",
             voice="af_nova",
             api_key="no-key-needed"

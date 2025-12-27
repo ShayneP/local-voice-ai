@@ -2,8 +2,6 @@ services:
   kokoro:
     build:
       context: ./inference/kokoro
-      args:
-        KOKORO_IMAGE: ${KOKORO_IMAGE:-ghcr.io/remsky/kokoro-fastapi-cpu:latest}
     ports:
       - "8880:8880"
     networks:
@@ -25,6 +23,7 @@ services:
       - whisper-data:/data
     environment:
       - VOXBOX_HF_REPO_ID=${VOXBOX_HF_REPO_ID:-Systran/faster-whisper-small}
+      - VOXBOX_DEVICE=${VOXBOX_DEVICE:-cpu}
       - DATA_DIR=/data
     ports:
       - "11435:80"
@@ -40,7 +39,7 @@ services:
       - ollama:/root/.ollama
     environment:
       - OLLAMA_HOST=${OLLAMA_HOST:-0.0.0.0:11434}
-      - OLLAMA_MODEL=${OLLAMA_MODEL:-gemma3:4b}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-ministral-3:8b}
     networks:
       - agent_network
     deploy:

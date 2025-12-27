@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "agent-starter-python"
+name = "livekit-agent"
 version = "1.0.0"
 description = "Simple voice AI assistant built with LiveKit Agents for Python"
 requires-python = ">=3.9"
@@ -12,6 +12,7 @@ dependencies = [
     "livekit-agents[silero,turn-detector,openai]~=1.3",
     "livekit-plugins-noise-cancellation~=0.2",
     "python-dotenv",
+    "asyncio",
 ]
 
 [dependency-groups]

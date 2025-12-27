@@ -1,105 +1,116 @@
 <div align="center">
-  <img src="./voice-assistant-frontend/.github/assets/app-icon.png" alt="App Icon" width="80" />
-  <h1>🧠 Local Voice Agent</h1>
-  <p>A full-stack, Dockerized AI voice assistant with speech, text, and voice synthesis powered by <a href="https://livekit.io?utm_source=demo">LiveKit</a>.</p>
+  <img src="./frontend/.github/assets/template-light.webp" alt="App Icon" width="80" />
+  <h1>Local Voice AI</h1>
+  <p>This project's goal is to enable anyone to easily build a powerful, private, local voice AI agent.</p>
+  <p>A full-stack, Dockerized AI voice assistant with speech, text, and voice synthesis delivered via WebRTC powered by <a href="https://livekit.io?utm_source=demo">LiveKit</a>.</p>
 </div>
 
-[Demo Video](https://github.com/user-attachments/assets/67a76e94-aacb-4087-b09c-d4e46d8e695e)
-
-## 🧩 Overview
+## Overview
 
 This repo contains everything needed to run a real-time AI voice assistant locally using:
 
-- 🎙️ **LiveKit Agents** for STT ↔ LLM ↔ TTS
-- 🧠 **llama.cpp** for running local LLMs
-- 🗣️ **Kokoro** for TTS voice synthesis
-- 👂 **Whisper (via VoxBox)** for speech-to-text
-- 🔍 **RAG** powered by Sentence Transformers and FAISS
-- 💬 **Next.js + Tailwind** frontend UI
-- 🐳 Fully containerized via Docker Compose
+- **LiveKit** for WebRTC realtime audio + rooms.
+- **LiveKit Agents (Python)** to orchestrate the STT → LLM → TTS pipeline.
+- **Whisper (via VoxBox)** for speech-to-text.
+- **Ollama** for running local LLMs.
+- **Kokoro** for text-to-speech voice synthesis.
+- **Next.js + Tailwind** frontend UI.
+- Fully containerized via Docker Compose.
 
-## 🏁 Quick Start
+## Getting Started
 
+Windows uses the PowerShell command; Linux and OSX use the bash command. Both will prompt you to choose CPU or GPU.
+
+Windows:
 ```bash
-./test.sh
+./compose-up.ps1
 ```
 
-This script:
-- Cleans up existing containers
-- Builds all services
-- Launches the full stack (agent, LLM, STT, TTS, frontend, and signaling server)
+Mac / Linux:
+```bash
+./compose-up.sh
+```
 
 Once it's up, visit [http://localhost:3000](http://localhost:3000) in your browser to start chatting.
 
-## 📦 Architecture
+### Notes on models and resources
+
+- The default LLM is `ministral-3:8b`, because it's pretty small and it supports tools.
+- If you want to use a different LLM, you can change the `OLLAMA_MODEL` environment variable.
+- If you want to use a different STT, you can change the `VOXBOX_HF_REPO_ID` environment variable.
+- You can even swap out the URLs to use cloud models if you want (see `livekit_agent/src/agent.py`).
+- The first time you run it, it needs to download a lot of stuff (often ~40GB) of models and supporting libraries for the different local inference providers. CPU-only is much smaller and faster for the initial install.
+- Installing takes a while. On a 14900hx it takes about 10 minutes to get everything ready.
+- Once it's all downloaded though, the whole suite itself fits in ~12GB of VRAM. If you want to run it with less resources, you can change the LLM to a smaller model (like `ministral-3:4b`). Tool calling starts to suffer at lower parameters though, so 8b is a good middle ground.
+
+## Architecture
 
 Each service is containerized and communicates over a shared Docker network:
+
 - `livekit`: WebRTC signaling server
-- `agent`: Custom Python agent with LiveKit SDK
-- `whisper`: Speech-to-text using `vox-box` and Whisper model
-- `llama_cpp`: Local LLM provider (e.g., `ggml-org/gemma-3-1b-it-GGUF`)
-- `kokoro`: TTS engine for speaking responses
-- `frontend`: React-based client using LiveKit components
+- `livekit_agent`: Python agent (LiveKit Agents SDK)
+- `whisper`: Speech-to-text (VoxBox + Whisper)
+- `ollama`: Local LLM provider
+- `kokoro`: TTS engine
+- `frontend`: Next.js client UI
 
-## 🧠 Agent Instructions
+## Agent
 
-Your agent lives in [`agent/myagent.py`](./agent/myagent.py). It uses:
-- `openai.STT` → routes to Whisper
-- `openai.LLM` → routes to llama.cpp
-- `groq.TTS` → routes to Kokoro
-- `silero.VAD` → for voice activity detection
-- `SentenceTransformer` → embeds documents and queries for RAG
-- `FAISS` → performs similarity search for knowledge retrieval
+The agent entrypoint is `livekit_agent/src/agent.py`. It uses the LiveKit Agents OpenAI-compatible plugins to talk to local inference services:
 
-The agent supports Retrieval-Augmented Generation (RAG) by loading documents from the `agent/docs` directory. These documents are embedded using the all-MiniLM-L6-v2 model and indexed using FAISS for fast similarity search. During conversations, relevant document snippets are automatically retrieved to enhance the agent's responses.
+- `openai.STT` → the VoxBox Whisper container
+- `openai.LLM` → the Ollama container
+- `openai.TTS` → the Kokoro container
+- `silero.VAD` for voice activity detection
 
-All metrics from each component are logged for debugging.
+## Environment variables
 
-## 🔐 Environment Variables
+Example env files:
 
-You can find environment examples in:
-- [`/.env`](./.env)
-- [`/agent/.env`](./agent/.env)
-- [`/voice-assistant-frontend/.env.example`](./voice-assistant-frontend/.env.example)
+- `.env` (used by Docker Compose)
+- `frontend/.env.example`
+- `livekit_agent/.env.example`
 
-These provide keys and internal URLs for each service. Most keys are placeholders for local dev use.
+For local (non-Docker) development, use `.env.local` files:
 
-## 🧪 Testing & Dev
+- `frontend/.env.local`
+- `livekit_agent/.env.local`
 
-To test or redeploy:
+### LiveKit URLs (important)
 
-```bash
-docker-compose down -v --remove-orphans
-docker-compose up --build
-```
+The LiveKit URL is used in two different contexts:
 
-The services will restart and build fresh containers.
+- `LIVEKIT_URL` is the internal, server-to-server address (e.g. `ws://livekit:7880`) used by containers like the agent.
+- `NEXT_PUBLIC_LIVEKIT_URL` is the browser-reachable LiveKit address returned by the frontend API (e.g. `ws://localhost:7880`).
 
-## 🧰 Project Structure
+The frontend only signs tokens; it does not connect to LiveKit directly. The browser connects using the `serverUrl` returned by `/api/connection-details`, so make sure `NEXT_PUBLIC_LIVEKIT_URL` points to a reachable LiveKit endpoint.
+
+## Development
+
+Use `.env.local` files in both `frontend` and `livekit_agent` dirs to set the dev environment variables for the project. This way, you can run either of those with `pnpm dev` or `uv run python src/agent.py dev` and test them without needing to build the Docker projects. You can just run either locally and hotreload your changes.
+
+## Project structure
 
 ```
 .
-├── agent/                     # Python voice agent
-├── llama_cpp/                 # LLM serving
-├── whisper/                   # Whisper via vox-box
-├── livekit/                   # Signaling server
-├── voice-assistant-frontend/ # Next.js UI client
-└── docker-compose.yml         # Brings it all together
+├─ frontend/        # Next.js UI client
+├─ inference/       # Local inference services (ollama/whisper/kokoro)
+├─ livekit/         # LiveKit server config
+├─ livekit_agent/   # Python voice agent (LiveKit Agents)
+├─ docker-compose.yml
+└─ docker-compose.gpu.yml
 ```
 
-## 📷 Screenshots
-
-![UI Screenshot](./voice-assistant-frontend/.github/assets/frontend-screenshot.jpeg)
-
-## 🛠️ Requirements
+## Requirements
 
 - Docker + Docker Compose
-- No GPU required (uses CPU-based models)
+- No GPU required (CPU works)
 - Recommended RAM: 12GB+
 
-## 🙌 Credits
+## Credits
 
-- Built with ❤️ by [LiveKit](https://livekit.io/)
-- Uses [LiveKit Agents](https://docs.livekit.io/agents/)
-- Local LLMs via [llama.cpp](https://github.com/ggml-org/llama.cpp)
-- TTS via [Kokoro](https://github.com/remsky/kokoro)
+- Built with LiveKit: https://livekit.io/
+- Uses LiveKit Agents: https://docs.livekit.io/agents/
+- STT via VoxBox + Whisper: https://github.com/livekit/voxbox
+- Local LLM via Ollama: https://ollama.com/
+- TTS via Kokoro: https://github.com/remsky/kokoro
