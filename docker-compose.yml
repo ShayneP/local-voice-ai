@@ -30,24 +30,31 @@ services:
     networks:
       - agent_network
 
-  ollama:
-    build:
-      context: ./inference/ollama
+  llama_cpp:
+    image: ghcr.io/ggml-org/llama.cpp:server
+    command:
+      - --host
+      - 0.0.0.0
+      - --port
+      - "11434"
+      - --hf-repo
+      - "${LLAMA_HF_REPO:-unsloth/Qwen3-4B-Instruct-2507-GGUF}"
+      - --alias
+      - "${LLAMA_MODEL_ALIAS:-qwen3-4b}"
     ports:
-      - "${OLLAMA_HOST_PORT:-11436}:11434"
+      - "${LLAMA_HOST_PORT:-11436}:11434"
     volumes:
-      - ollama:/root/.ollama
+      - ./inference/llama/models:/models
     environment:
-      - OLLAMA_HOST=${OLLAMA_HOST:-0.0.0.0:11434}
-      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen3-vl:4b}
+      - XDG_CACHE_HOME=/models
+      - HF_HOME=/models
     networks:
       - agent_network
-    deploy:
-      resources:
-        limits:
-          memory: 8G
-        reservations:
-          memory: 6G
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:11434/v1/models > /dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
 
   livekit_agent:
     build:
@@ -63,10 +70,14 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY:-no-key-needed}
       - GROQ_API_KEY=${GROQ_API_KEY:-no-key-needed}
     depends_on:
-      - livekit
-      - kokoro
-      - whisper
-      - ollama
+      livekit:
+        condition: service_started
+      kokoro:
+        condition: service_started
+      whisper:
+        condition: service_started
+      llama_cpp:
+        condition: service_healthy
     networks:
       - agent_network
 
@@ -86,7 +97,6 @@ services:
       - agent_network
 
 volumes:
-  ollama:
   whisper-data:
 
 networks:
