@@ -12,7 +12,7 @@ This repo contains everything needed to run a real-time AI voice assistant local
 - **LiveKit** for WebRTC realtime audio + rooms.
 - **LiveKit Agents (Python)** to orchestrate the STT → LLM → TTS pipeline.
 - **Whisper (via VoxBox)** for speech-to-text.
-- **Ollama** for running local LLMs.
+- **llama.cpp (llama-server)** for running local LLMs (OpenAI-compatible API).
 - **Kokoro** for text-to-speech voice synthesis.
 - **Next.js + Tailwind** frontend UI.
 - Fully containerized via Docker Compose.
@@ -35,13 +35,19 @@ Once it's up, visit [http://localhost:3000](http://localhost:3000) in your brows
 
 ### Notes on models and resources
 
-- The default LLM is `qwen3-vl:4b`, because it's small and it supports tools.
-- If you want to use a different LLM, you can change the `OLLAMA_MODEL` environment variable.
-- If you want to use a different STT, you can change the `VOXBOX_HF_REPO_ID` environment variable.
-- You can even swap out the URLs to use cloud models if you want (see `livekit_agent/src/agent.py`).
-- The first time you run it, it needs to download a lot of stuff (often ~40GB) of models and supporting libraries (like CUDA) for the different local inference providers. CPU-only is much smaller and faster for the initial install.
+- The LLM runs via `llama-server` and auto-downloads from Hugging Face on first boot (no manual model download needed).
+- The default repo is `unsloth/Qwen3-4B-Instruct-2507-GGUF` (change `LLAMA_HF_REPO` to use a different model or quant).
+- The API exposes the model under an alias (default `qwen3-4b` via `LLAMA_MODEL_ALIAS`); the agent uses that via `LLAMA_MODEL`.
+- If you want to use a different STT model, change `VOXBOX_HF_REPO_ID`.
+- You can swap out the LLM/STT/TTS URLs to use cloud models if you want (see `livekit_agent/src/agent.py`).
+- The first run downloads a lot of data (often tens of GB) for models and supporting libraries. GPU-enabled images are bigger and take longer.
 - Installing takes a while. On an i9-14900hx it takes about 10 minutes to get everything ready.
-- Once it's all downloaded though, the whole suite itself fits in ~8GB of VRAM.
+- Ongoing VRAM/RAM usage depends heavily on the model, context size, and GPU offload settings.
+
+### Startup readiness
+
+`llama_cpp` returns 503s while the model is downloading/loading/warming up. The Compose stack includes a healthcheck for `llama_cpp`, and `livekit_agent` waits until `llama_cpp` is healthy (i.e. `/v1/models` responds) before starting.
+
 ## Architecture
 
 Each service is containerized and communicates over a shared Docker network:
@@ -49,7 +55,7 @@ Each service is containerized and communicates over a shared Docker network:
 - `livekit`: WebRTC signaling server
 - `livekit_agent`: Python agent (LiveKit Agents SDK)
 - `whisper`: Speech-to-text (VoxBox + Whisper)
-- `ollama`: Local LLM provider
+- `llama_cpp`: Local LLM provider (`llama-server`)
 - `kokoro`: TTS engine
 - `frontend`: Next.js client UI
 
@@ -58,7 +64,7 @@ Each service is containerized and communicates over a shared Docker network:
 The agent entrypoint is `livekit_agent/src/agent.py`. It uses the LiveKit Agents OpenAI-compatible plugins to talk to local inference services:
 
 - `openai.STT` → the VoxBox Whisper container
-- `openai.LLM` → the Ollama container
+- `openai.LLM` → `llama_cpp` (`llama-server`)
 - `openai.TTS` → the Kokoro container
 - `silero.VAD` for voice activity detection
 
@@ -84,16 +90,35 @@ The LiveKit URL is used in two different contexts:
 
 The frontend only signs tokens; it does not connect to LiveKit directly. The browser connects using the `serverUrl` returned by `/api/connection-details`, so make sure `NEXT_PUBLIC_LIVEKIT_URL` points to a reachable LiveKit endpoint.
 
+### LLM (llama.cpp) settings
+
+The Compose stack runs `llama-server` with `--hf-repo` so models are fetched automatically and cached on disk:
+
+- `LLAMA_HF_REPO`: Hugging Face repo, optionally with `:quant` (e.g. `unsloth/Qwen3-4B-Instruct-2507-GGUF:q4_k_m`)
+- `LLAMA_MODEL_ALIAS`: Name exposed via the API (and returned from `/v1/models`)
+- `LLAMA_MODEL`: What the agent requests (should match `LLAMA_MODEL_ALIAS`)
+- `LLAMA_BASE_URL`: LLM base URL for the agent (default `http://llama_cpp:11434/v1`)
+- `LLAMA_HOST_PORT`: Host port mapping for llama-server (default `11436`)
+
+Models are cached under `inference/llama/models` (mounted into the container as `/models`).
+
 ## Development
 
-Use `.env.local` files in both `frontend` and `livekit_agent` dirs to set the dev environment variables for the project. This way, you can run either of those with `pnpm dev` or `uv run python src/agent.py dev` and test them without needing to build the Docker projects. You can just run either locally and hotreload your changes.
+Use `.env.local` files in both `frontend` and `livekit_agent` dirs to set the dev environment variables for the project. This way, you can run either of those with `pnpm dev` or `uv run python src/agent.py dev` and test them without needing to build the Docker projects.
+
+## Rebuild / redeploy
+
+```bash
+docker compose down -v --remove-orphans
+docker compose up --build
+```
 
 ## Project structure
 
 ```
 .
 ├─ frontend/        # Next.js UI client
-├─ inference/       # Local inference services (ollama/whisper/kokoro)
+├─ inference/       # Local inference services (llama/whisper/kokoro)
 ├─ livekit/         # LiveKit server config
 ├─ livekit_agent/   # Python voice agent (LiveKit Agents)
 ├─ docker-compose.yml
@@ -110,6 +135,6 @@ Use `.env.local` files in both `frontend` and `livekit_agent` dirs to set the de
 
 - Built with LiveKit: https://livekit.io/
 - Uses LiveKit Agents: https://docs.livekit.io/agents/
-- STT via VoxBox + Whisper: https://github.com/gpustack/vox-box
-- Local LLM via Ollama: https://ollama.com/
+- STT via VoxBox + Whisper: https://pypi.org/project/vox-box/
+- Local LLM via llama.cpp: https://github.com/ggml-org/llama.cpp
 - TTS via Kokoro: https://github.com/remsky/kokoro
