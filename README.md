@@ -41,7 +41,7 @@ Once it's up, visit [http://localhost:3000](http://localhost:3000) in your brows
 - The API exposes the model under an alias (default `qwen3-4b` via `LLAMA_MODEL_ALIAS`); the agent uses that via `LLAMA_MODEL`.
 - If you want to use a different STT model, change `VOXBOX_HF_REPO_ID`.
 - You can swap out the LLM/STT/TTS URLs to use cloud models if you want (see `livekit_agent/src/agent.py`).
-- The first run downloads a lot of data (often tens of GB) for models and supporting libraries. GPU-enabled images are bigger and take longer.
+- The first run downloads a lot of data (up to tens of GB) for models and supporting libraries, especially if GPU-enabled. CPU-enabled images are smaller and download more quickly.
 - Installing takes a while. On an i9-14900hx it takes about 10 minutes to get everything ready.
 - Ongoing VRAM/RAM usage depends heavily on the model, context size, and GPU offload settings.
 
