@@ -2,7 +2,7 @@
   <img src="./frontend/.github/assets/template-light.webp" alt="App Icon" width="80" />
   <h1>Local Voice AI</h1>
   <p>This project's goal is to enable anyone to easily build a powerful, private, local voice AI agent.</p>
-  <p>A full-stack, Dockerized AI voice assistant with speech, text, and voice synthesis delivered via WebRTC powered by <a href="https://livekit.io?utm_source=demo">LiveKit</a>.</p>
+  <p>A full-stack, Dockerized AI voice assistant with speech, text, and voice synthesis delivered via WebRTC powered by <a href="https://docs.livekit.io/agents?utm_source=local-voice-ai">LiveKit Agents</a>.</p>
 </div>
 
 ## Overview
@@ -19,7 +19,7 @@ This repo contains everything needed to run a real-time AI voice assistant local
 
 ## Getting Started
 
-Windows uses the PowerShell command; Linux and OSX use the bash command. Both will prompt you to choose CPU or GPU.
+Windows uses the PowerShell command; Linux and OSX use the bash command. Both will prompt you to choose CPU or Nvidia GPU.
 
 Windows:
 ```bash
@@ -35,14 +35,13 @@ Once it's up, visit [http://localhost:3000](http://localhost:3000) in your brows
 
 ### Notes on models and resources
 
-- The default LLM is `ministral-3:8b`, because it's pretty small and it supports tools.
+- The default LLM is `qwen3-vl:4b`, because it's small and it supports tools.
 - If you want to use a different LLM, you can change the `OLLAMA_MODEL` environment variable.
 - If you want to use a different STT, you can change the `VOXBOX_HF_REPO_ID` environment variable.
 - You can even swap out the URLs to use cloud models if you want (see `livekit_agent/src/agent.py`).
-- The first time you run it, it needs to download a lot of stuff (often ~40GB) of models and supporting libraries for the different local inference providers. CPU-only is much smaller and faster for the initial install.
-- Installing takes a while. On a 14900hx it takes about 10 minutes to get everything ready.
-- Once it's all downloaded though, the whole suite itself fits in ~12GB of VRAM. If you want to run it with less resources, you can change the LLM to a smaller model (like `ministral-3:4b`). Tool calling starts to suffer at lower parameters though, so 8b is a good middle ground.
-
+- The first time you run it, it needs to download a lot of stuff (often ~40GB) of models and supporting libraries (like CUDA) for the different local inference providers. CPU-only is much smaller and faster for the initial install.
+- Installing takes a while. On an i9-14900hx it takes about 10 minutes to get everything ready.
+- Once it's all downloaded though, the whole suite itself fits in ~8GB of VRAM.
 ## Architecture
 
 Each service is containerized and communicates over a shared Docker network:
@@ -111,6 +110,6 @@ Use `.env.local` files in both `frontend` and `livekit_agent` dirs to set the de
 
 - Built with LiveKit: https://livekit.io/
 - Uses LiveKit Agents: https://docs.livekit.io/agents/
-- STT via VoxBox + Whisper: https://github.com/livekit/voxbox
+- STT via VoxBox + Whisper: https://github.com/gpustack/vox-box
 - Local LLM via Ollama: https://ollama.com/
 - TTS via Kokoro: https://github.com/remsky/kokoro

@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 
-OLLAMA_MODEL="${OLLAMA_MODEL:-ministral-3:8b}"
+OLLAMA_MODEL="${OLLAMA_MODEL:-qwen3-vl:4b}"
 OLLAMA_PREWARM="${OLLAMA_PREWARM:-true}"
 
 echo "Starting Ollama server..."

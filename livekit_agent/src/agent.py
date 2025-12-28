@@ -58,7 +58,7 @@ async def my_agent(ctx: JobContext):
         "room": ctx.room.name,
     }
 
-    ollama_model = os.getenv("OLLAMA_MODEL", "ministral-3:8b")
+    ollama_model = os.getenv("OLLAMA_MODEL", "qwen3-vl:4b")
 
     session = AgentSession(
         stt=openai.STT(
