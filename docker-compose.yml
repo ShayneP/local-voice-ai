@@ -80,6 +80,12 @@ services:
         condition: service_started
       llama_cpp:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8081/ > /dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
     networks:
       - agent_network
 
@@ -94,7 +100,10 @@ services:
       - LIVEKIT_API_KEY=devkey
       - LIVEKIT_API_SECRET=secret
     depends_on:
-      - livekit
+      livekit:
+        condition: service_started
+      livekit_agent:
+        condition: service_healthy
     networks:
       - agent_network
 
