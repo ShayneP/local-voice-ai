@@ -23,9 +23,16 @@ if [[ -z "$mode" ]]; then
   esac
 fi
 
+# macOS-specific settings
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  export LLAMA_CTX_SIZE="${LLAMA_CTX_SIZE:-16384}"
+fi
+
 compose_files=(-f docker-compose.yml)
 if [[ "$mode" == "gpu" ]]; then
   compose_files+=(-f docker-compose.gpu.yml)
+elif [[ "$(uname -s)" == "Darwin" && "$(uname -m)" == "arm64" ]]; then
+  compose_files+=(-f docker-compose.macos.yml)
 fi
 
 echo "Running: docker compose ${compose_files[*]} up --build $*"

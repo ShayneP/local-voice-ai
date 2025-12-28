@@ -41,6 +41,8 @@ services:
       - "${LLAMA_HF_REPO:-unsloth/Qwen3-4B-Instruct-2507-GGUF}"
       - --alias
       - "${LLAMA_MODEL_ALIAS:-qwen3-4b}"
+      - --ctx-size
+      - "${LLAMA_CTX_SIZE:-16384}"
     ports:
       - "${LLAMA_HOST_PORT:-11436}:11434"
     volumes:

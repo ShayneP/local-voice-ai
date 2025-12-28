@@ -28,6 +28,7 @@ Windows:
 
 Mac / Linux:
 ```bash
+chmod +x filename.sh
 ./compose-up.sh
 ```
 

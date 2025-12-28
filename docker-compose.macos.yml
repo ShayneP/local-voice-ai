@@ -1,0 +1,6 @@
+# Override for Apple Silicon Macs - builds native ARM64 llama-server
+services:
+  llama_cpp:
+    build:
+      context: ./inference/llama
+    image: local-voice-ai-llama-server:arm64
