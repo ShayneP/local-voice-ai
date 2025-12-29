@@ -102,8 +102,6 @@ services:
     depends_on:
       livekit:
         condition: service_started
-      livekit_agent:
-        condition: service_healthy
     networks:
       - agent_network
 
