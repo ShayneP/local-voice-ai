@@ -100,10 +100,7 @@ services:
       - LIVEKIT_API_KEY=devkey
       - LIVEKIT_API_SECRET=secret
     depends_on:
-      livekit:
-        condition: service_started
-      livekit_agent:
-        condition: service_healthy
+      - livekit
     networks:
       - agent_network
 

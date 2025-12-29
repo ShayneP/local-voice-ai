@@ -40,9 +40,23 @@ fi
 echo "Starting services..."
 docker compose "${compose_files[@]}" up --build -d "$@"
 
-# Show status and wait for all services to be ready
-"$SCRIPT_DIR/scripts/wait-ready.sh"
+cargo_args=(run --manifest-path "$SCRIPT_DIR/tui/Cargo.toml")
+if [[ "${LOCAL_VOICE_AI_TUI_RELEASE:-}" == "1" ]]; then
+  cargo_args+=(--release)
+fi
 
-# Follow logs
-echo "Following logs (Ctrl+C to stop)..."
-docker compose "${compose_files[@]}" logs -f
+app_args=()
+if [[ -n "${LOCAL_VOICE_AI_TUI_MAX_LINES:-}" ]]; then
+  app_args+=(--max-lines "${LOCAL_VOICE_AI_TUI_MAX_LINES}")
+fi
+if [[ -n "${LOCAL_VOICE_AI_TUI_TAIL:-}" ]]; then
+  app_args+=(--tail "${LOCAL_VOICE_AI_TUI_TAIL}")
+fi
+if [[ -n "${LOCAL_VOICE_AI_TUI_INTERVAL_MS:-}" ]]; then
+  app_args+=(--interval-ms "${LOCAL_VOICE_AI_TUI_INTERVAL_MS}")
+fi
+
+app_args+=("${compose_files[@]}")
+
+echo "Launching TUI..."
+cargo "${cargo_args[@]}" -- "${app_args[@]}"

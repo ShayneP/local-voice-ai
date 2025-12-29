@@ -28,13 +28,11 @@ if ($Mode -eq "gpu") {
   $composeFiles += "docker-compose.gpu.yml"
 }
 
-# Build compose command
 $composeCmd = @("compose")
 foreach ($file in $composeFiles) {
   $composeCmd += @("-f", $file)
 }
 
-# Start services in detached mode
 $startCmd = $composeCmd + @("up", "--build", "-d")
 if ($ComposeArgs) {
   $startCmd += $ComposeArgs
@@ -44,11 +42,26 @@ Write-Host "Starting services..."
 & docker @startCmd
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-# Show status and wait for all services to be ready
-& "$ScriptDir\scripts\wait-ready.ps1"
+$cargoArgs = @("run", "--manifest-path", "$ScriptDir\tui\Cargo.toml")
+if ($env:LOCAL_VOICE_AI_TUI_RELEASE -eq "1") {
+  $cargoArgs += "--release"
+}
 
-# Follow logs
-Write-Host "Following logs (Ctrl+C to stop)..."
-$logsCmd = $composeCmd + @("logs", "-f")
-& docker @logsCmd
+$appArgs = @()
+if ($env:LOCAL_VOICE_AI_TUI_MAX_LINES) {
+  $appArgs += @("--max-lines", $env:LOCAL_VOICE_AI_TUI_MAX_LINES)
+}
+if ($env:LOCAL_VOICE_AI_TUI_TAIL) {
+  $appArgs += @("--tail", $env:LOCAL_VOICE_AI_TUI_TAIL)
+}
+if ($env:LOCAL_VOICE_AI_TUI_INTERVAL_MS) {
+  $appArgs += @("--interval-ms", $env:LOCAL_VOICE_AI_TUI_INTERVAL_MS)
+}
+
+foreach ($file in $composeFiles) {
+  $appArgs += @("-f", $file)
+}
+
+Write-Host "Launching TUI..."
+& cargo @cargoArgs -- @appArgs
 exit $LASTEXITCODE

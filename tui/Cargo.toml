@@ -1,0 +1,14 @@
+[package]
+name = "local-voice-ai-tui"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0"
+clap = { version = "4.5", features = ["derive"] }
+crossterm = { version = "0.27", features = ["event-stream"] }
+futures-util = "0.3"
+ratatui = "0.26"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1.39", features = ["io-util", "macros", "process", "rt-multi-thread", "sync", "time"] }

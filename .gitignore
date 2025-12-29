@@ -1,2 +1,3 @@
 venv/
 inference/llama/models/
+tui/target/

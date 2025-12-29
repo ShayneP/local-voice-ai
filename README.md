@@ -32,6 +32,22 @@ chmod +x filename.sh
 ./compose-up.sh
 ```
 
+### Terminal UI (optional)
+
+If you want a split-pane terminal UI with per-service logs and status:
+
+Windows:
+```bash
+./compose-tui.ps1
+```
+
+Mac / Linux:
+```bash
+./compose-tui.sh
+```
+
+The TUI requires a Rust toolchain (`cargo`). Keys: `q` quit, `j/k` or arrows move, `r` restart, `p` pause, `c` clear.
+
 Once it's up, visit [http://localhost:3000](http://localhost:3000) in your browser to start chatting.
 
 ### Notes on models and resources
