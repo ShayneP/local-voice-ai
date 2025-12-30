@@ -30,7 +30,7 @@ $cmd = @("compose")
 foreach ($file in $composeFiles) {
   $cmd += @("-f", $file)
 }
-$cmd += @("up", "--build")
+$cmd += @("up")
 if ($ComposeArgs) {
   $cmd += $ComposeArgs
 }

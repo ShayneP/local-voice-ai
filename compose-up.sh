@@ -35,5 +35,5 @@ elif [[ "$(uname -s)" == "Darwin" && "$(uname -m)" == "arm64" ]]; then
   compose_files+=(-f docker-compose.macos.yml)
 fi
 
-echo "Running: docker compose ${compose_files[*]} up --build $*"
-docker compose "${compose_files[@]}" up --build "$@"
+echo "Running: docker compose ${compose_files[*]} up $*"
+docker compose "${compose_files[@]}" up "$@"
