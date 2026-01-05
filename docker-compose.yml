@@ -2,8 +2,6 @@ services:
   kokoro:
     build:
       context: ./inference/kokoro
-      args:
-        KOKORO_IMAGE: ${KOKORO_IMAGE:-ghcr.io/remsky/kokoro-fastapi-cpu:latest}
     ports:
       - "8880:8880"
     networks:
@@ -25,30 +23,40 @@ services:
       - whisper-data:/data
     environment:
       - VOXBOX_HF_REPO_ID=${VOXBOX_HF_REPO_ID:-Systran/faster-whisper-small}
+      - VOXBOX_DEVICE=${VOXBOX_DEVICE:-cpu}
       - DATA_DIR=/data
     ports:
       - "11435:80"
     networks:
       - agent_network
 
-  ollama:
-    build:
-      context: ./inference/ollama
+  llama_cpp:
+    image: ghcr.io/ggml-org/llama.cpp:server
+    command:
+      - --host
+      - 0.0.0.0
+      - --port
+      - "11434"
+      - --hf-repo
+      - "${LLAMA_HF_REPO:-unsloth/Qwen3-4B-Instruct-2507-GGUF}"
+      - --alias
+      - "${LLAMA_MODEL_ALIAS:-qwen3-4b}"
+      - --ctx-size
+      - "${LLAMA_CTX_SIZE:-16384}"
     ports:
-      - "${OLLAMA_HOST_PORT:-11436}:11434"
+      - "${LLAMA_HOST_PORT:-11436}:11434"
     volumes:
-      - ollama:/root/.ollama
+      - ./inference/llama/models:/models
     environment:
-      - OLLAMA_HOST=${OLLAMA_HOST:-0.0.0.0:11434}
-      - OLLAMA_MODEL=${OLLAMA_MODEL:-gemma3:4b}
+      - XDG_CACHE_HOME=/models
+      - HF_HOME=/models
     networks:
       - agent_network
-    deploy:
-      resources:
-        limits:
-          memory: 8G
-        reservations:
-          memory: 6G
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:11434/v1/models > /dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
 
   livekit_agent:
     build:
@@ -64,10 +72,20 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY:-no-key-needed}
       - GROQ_API_KEY=${GROQ_API_KEY:-no-key-needed}
     depends_on:
-      - livekit
-      - kokoro
-      - whisper
-      - ollama
+      livekit:
+        condition: service_started
+      kokoro:
+        condition: service_started
+      whisper:
+        condition: service_started
+      llama_cpp:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8081/ > /dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
     networks:
       - agent_network
 
@@ -82,12 +100,12 @@ services:
       - LIVEKIT_API_KEY=devkey
       - LIVEKIT_API_SECRET=secret
     depends_on:
-      - livekit
+      livekit:
+        condition: service_started
     networks:
       - agent_network
 
 volumes:
-  ollama:
   whisper-data:
 
 networks:

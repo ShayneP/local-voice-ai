@@ -1,0 +1,18 @@
+services:
+  kokoro:
+    build:
+      args:
+        KOKORO_IMAGE: ${KOKORO_IMAGE:-ghcr.io/remsky/kokoro-fastapi-gpu:latest}
+
+  llama_cpp:
+    image: ghcr.io/ggml-org/llama.cpp:server-cuda
+    gpus: all
+    environment:
+      - LLAMA_ARG_N_GPU_LAYERS=${LLAMA_N_GPU_LAYERS:-35}
+  whisper:
+    build:
+      args:
+        WHISPER_BASE: ${WHISPER_BASE:-nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04}
+    gpus: all
+    environment:
+      - VOXBOX_DEVICE=${VOXBOX_DEVICE:-cuda:0}
