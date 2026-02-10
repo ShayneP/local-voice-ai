@@ -63,23 +63,20 @@ async def my_agent(ctx: JobContext):
 
     session = AgentSession(
         stt=openai.STT(
-            base_url="http://whisper:80/v1",
-            # base_url="http://localhost:11435/v1", # uncomment for local testing
-            model="Systran/faster-whisper-small",
-            api_key="no-key-needed"
+            base_url=os.getenv("TELNYX_STT_URL", "http://whisper:80/v1"),
+            model=os.getenv("TELNYX_STT_MODEL", "Systran/faster-whisper-small"),
+            api_key=os.getenv("TELNYX_API_KEY", "no-key-needed")
         ),
         llm=openai.LLM(
-            base_url=llama_base_url,
-            # base_url="http://localhost:11436/v1", # uncomment for local testing
-            model=llama_model,
-            api_key="no-key-needed"
+            base_url=os.getenv("TELNYX_LLM_URL", llama_base_url),
+            model=os.getenv("TELNYX_LLM_MODEL", llama_model),
+            api_key=os.getenv("TELNYX_API_KEY", "no-key-needed")
         ),
         tts=openai.TTS(
-            base_url="http://kokoro:8880/v1",
-            # base_url="http://localhost:8880/v1", # uncomment for local testing
-            model="kokoro",
-            voice="af_nova",
-            api_key="no-key-needed"
+            base_url=os.getenv("TELNYX_TTS_URL", "http://kokoro:8880/v1"),
+            model=os.getenv("TELNYX_TTS_MODEL", "kokoro"),
+            voice=os.getenv("TELNYX_TTS_VOICE", "af_nova"),
+            api_key=os.getenv("TELNYX_API_KEY", "no-key-needed")
         ),
         turn_detection=MultilingualModel(),
         vad=ctx.proc.userdata["vad"],
