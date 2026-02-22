@@ -61,12 +61,31 @@ async def my_agent(ctx: JobContext):
     llama_model = os.getenv("LLAMA_MODEL", "qwen3-4b")
     llama_base_url = os.getenv("LLAMA_BASE_URL", "http://llama_cpp:11434/v1")
 
+    stt_provider = os.getenv("STT_PROVIDER", "nemotron").lower()
+    if stt_provider == "whisper":
+        default_stt_base_url = "http://whisper:80/v1"
+        default_stt_model = "Systran/faster-whisper-small"
+    else:
+        default_stt_base_url = "http://nemotron:8000/v1"
+        default_stt_model = "nemotron-speech-streaming"
+
+    stt_base_url = os.getenv("STT_BASE_URL", default_stt_base_url)
+    stt_model = os.getenv("STT_MODEL", default_stt_model)
+    stt_api_key = os.getenv("STT_API_KEY", "no-key-needed")
+
+    logger.info(
+        "Starting agent with STT provider=%s model=%s base_url=%s",
+        stt_provider,
+        stt_model,
+        stt_base_url,
+    )
+
     session = AgentSession(
         stt=openai.STT(
-            base_url="http://whisper:80/v1",
+            base_url=stt_base_url,
             # base_url="http://localhost:11435/v1", # uncomment for local testing
-            model="Systran/faster-whisper-small",
-            api_key="no-key-needed"
+            model=stt_model,
+            api_key=stt_api_key
         ),
         llm=openai.LLM(
             base_url=llama_base_url,
