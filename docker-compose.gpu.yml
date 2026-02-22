@@ -9,6 +9,14 @@ services:
     gpus: all
     environment:
       - LLAMA_ARG_N_GPU_LAYERS=${LLAMA_N_GPU_LAYERS:-35}
+
+  nemotron:
+    build:
+      args:
+        NEMOTRON_BASE: ${NEMOTRON_BASE:-nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04}
+        TORCH_INDEX_URL: ${NEMOTRON_TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu124}
+    gpus: all
+
   whisper:
     build:
       args:
