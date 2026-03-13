@@ -12,15 +12,20 @@ if [[ $# -gt 0 ]]; then
 fi
 
 if [[ -z "$mode" ]]; then
-  echo "Select target:"
-  echo "  1) CPU"
-  echo "  2) GPU"
-  read -r -p "Enter choice (1/2): " choice
-  case "$choice" in
-    1) mode="cpu" ;;
-    2) mode="gpu" ;;
-    *) echo "Invalid choice. Use 1 for CPU or 2 for GPU." >&2; exit 1 ;;
-  esac
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    echo "Detected macOS — using CPU mode."
+    mode="cpu"
+  else
+    echo "Select target:"
+    echo "  1) CPU"
+    echo "  2) Nvidia GPU"
+    read -r -p "Enter choice (1/2): " choice
+    case "$choice" in
+      1) mode="cpu" ;;
+      2) mode="gpu" ;;
+      *) echo "Invalid choice. Use 1 for CPU or 2 for GPU." >&2; exit 1 ;;
+    esac
+  fi
 fi
 
 # macOS-specific settings

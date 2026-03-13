@@ -70,7 +70,7 @@ services:
     ports:
       - "${LLAMA_HOST_PORT:-11436}:11434"
     volumes:
-      - ./inference/llama/models:/models
+      - llama-models:/models
     environment:
       - XDG_CACHE_HOME=/models
       - HF_HOME=/models
@@ -89,7 +89,6 @@ services:
       - .env
     environment:
       - LIVEKIT_URL=${LIVEKIT_URL:-ws://livekit:7880}
-      - LIVEKIT_HOST=${LIVEKIT_URL:-ws://livekit:7880}
       - LIVEKIT_API_KEY=${LIVEKIT_API_KEY:-devkey}
       - LIVEKIT_API_SECRET=${LIVEKIT_API_SECRET:-secret}
       - LIVEKIT_AGENT_PORT=${LIVEKIT_AGENT_PORT:-7880}
@@ -130,6 +129,7 @@ services:
       - agent_network
 
 volumes:
+  llama-models:
   nemotron-cache:
   whisper-data:
 

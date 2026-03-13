@@ -29,7 +29,7 @@ Windows:
 
 Mac / Linux:
 ```bash
-chmod +x filename.sh
+chmod +x compose-up.sh
 ./compose-up.sh
 ```
 
@@ -105,7 +105,7 @@ The Compose stack runs `llama-server` with `--hf-repo` so models are fetched aut
 - `LLAMA_BASE_URL`: LLM base URL for the agent (default `http://llama_cpp:11434/v1`)
 - `LLAMA_HOST_PORT`: Host port mapping for llama-server (default `11436`)
 
-Models are cached under `inference/llama/models` (mounted into the container as `/models`).
+Models are cached in a Docker volume (`llama-models`, mounted as `/models` in the container).
 
 ### STT settings (Nemotron default)
 
@@ -128,6 +128,13 @@ When using Whisper fallback, set:
 - `STT_BASE_URL=http://whisper:80/v1`
 - `STT_MODEL=Systran/faster-whisper-small` (or your preferred VoxBox model)
 
+### TTS settings (Kokoro default)
+
+- `TTS_BASE_URL`: OpenAI-compatible TTS base URL used by the agent (default `http://kokoro:8880/v1`)
+- `TTS_MODEL`: TTS model id (default `kokoro`)
+- `TTS_VOICE`: TTS voice name (default `af_nova`)
+- `TTS_API_KEY`: Optional API key for OpenAI-compatible TTS servers
+
 ## Development
 
 Use `.env.local` files in both `frontend` and `livekit_agent` dirs to set the dev environment variables for the project. This way, you can run either of those with `pnpm dev` or `uv run python src/agent.py dev` and test them without needing to build the Docker projects.
@@ -145,7 +152,6 @@ docker compose up --build
 .
 ├─ frontend/        # Next.js UI client
 ├─ inference/       # Local inference services (llama/nemotron/whisper/kokoro)
-├─ livekit/         # LiveKit server config
 ├─ livekit_agent/   # Python voice agent (LiveKit Agents)
 ├─ docker-compose.yml
 └─ docker-compose.gpu.yml

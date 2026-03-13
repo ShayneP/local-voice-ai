@@ -9,9 +9,9 @@ from livekit.agents import (
     AgentSession,
     JobContext,
     JobProcess,
+    RunContext,
     cli,
     function_tool,
-    RunContext,
 )
 from livekit.plugins import silero, openai
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
@@ -37,7 +37,7 @@ class Assistant(Agent):
         number2: int,
     ) -> dict[str, Any]:
         """Multiply two numbers.
-        
+
         Args:
             number1: The first number to multiply.
             number2: The second number to multiply.
@@ -73,6 +73,11 @@ async def my_agent(ctx: JobContext):
     stt_model = os.getenv("STT_MODEL", default_stt_model)
     stt_api_key = os.getenv("STT_API_KEY", "no-key-needed")
 
+    tts_base_url = os.getenv("TTS_BASE_URL", "http://kokoro:8880/v1")
+    tts_model = os.getenv("TTS_MODEL", "kokoro")
+    tts_voice = os.getenv("TTS_VOICE", "af_nova")
+    tts_api_key = os.getenv("TTS_API_KEY", "no-key-needed")
+
     logger.info(
         "Starting agent with STT provider=%s model=%s base_url=%s",
         stt_provider,
@@ -83,22 +88,19 @@ async def my_agent(ctx: JobContext):
     session = AgentSession(
         stt=openai.STT(
             base_url=stt_base_url,
-            # base_url="http://localhost:11435/v1", # uncomment for local testing
             model=stt_model,
-            api_key=stt_api_key
+            api_key=stt_api_key,
         ),
         llm=openai.LLM(
             base_url=llama_base_url,
-            # base_url="http://localhost:11436/v1", # uncomment for local testing
             model=llama_model,
-            api_key="no-key-needed"
+            api_key="no-key-needed",
         ),
         tts=openai.TTS(
-            base_url="http://kokoro:8880/v1",
-            # base_url="http://localhost:8880/v1", # uncomment for local testing
-            model="kokoro",
-            voice="af_nova",
-            api_key="no-key-needed"
+            base_url=tts_base_url,
+            model=tts_model,
+            voice=tts_voice,
+            api_key=tts_api_key,
         ),
         turn_detection=MultilingualModel(),
         vad=ctx.proc.userdata["vad"],
