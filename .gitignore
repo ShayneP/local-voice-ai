@@ -4,3 +4,6 @@ inference/llama/models/
 # Python cache artifacts
 **/__pycache__/
 *.pyc
+
+# Rust build artifacts
+tui/target/

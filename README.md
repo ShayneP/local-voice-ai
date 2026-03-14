@@ -135,6 +135,39 @@ When using Whisper fallback, set:
 - `TTS_VOICE`: TTS voice name (default `af_nova`)
 - `TTS_API_KEY`: Optional API key for OpenAI-compatible TTS servers
 
+## TUI (Terminal Client)
+
+An alternative terminal-based client built with Rust and [ratatui](https://ratatui.rs). Supports text chat and voice chat with an audio visualizer.
+
+### Build & run
+
+```bash
+cd tui
+cargo build --release
+```
+
+With the Docker stack running:
+
+```bash
+# Uses default devkey/secret to connect to local LiveKit
+cargo run -- --url ws://localhost:7880
+
+# Or fetch a token from the frontend
+cargo run -- --frontend-url http://localhost:3000
+```
+
+### Controls
+
+- **Ctrl+T** — Toggle between text and voice mode
+- **Ctrl+M** — Toggle mic mute (voice mode)
+- **Enter** — Send message (text mode)
+- **Esc / Ctrl+C** — Quit
+
+### Requirements
+
+- Rust toolchain (`rustup`)
+- System audio I/O (microphone + speakers) for voice mode
+
 ## Development
 
 Use `.env.local` files in both `frontend` and `livekit_agent` dirs to set the dev environment variables for the project. This way, you can run either of those with `pnpm dev` or `uv run python src/agent.py dev` and test them without needing to build the Docker projects.
@@ -151,6 +184,7 @@ docker compose up --build
 ```
 .
 ├─ frontend/        # Next.js UI client
+├─ tui/             # Terminal UI client (Rust/ratatui)
 ├─ inference/       # Local inference services (llama/nemotron/whisper/kokoro)
 ├─ livekit_agent/   # Python voice agent (LiveKit Agents)
 ├─ docker-compose.yml

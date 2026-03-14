@@ -7,6 +7,7 @@ RUN apt-get update && apt-get install -y \
     curl \
     git \
     libcurl4-openssl-dev \
+    libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Clone and build llama.cpp
@@ -17,6 +18,7 @@ WORKDIR /build/llama.cpp
 RUN cmake -B build \
     -DGGML_NATIVE=OFF \
     -DLLAMA_CURL=ON \
+    -DLLAMA_OPENSSL=ON \
     && cmake --build build --config Release --target llama-server -j$(nproc)
 
 # Runtime image
@@ -25,6 +27,7 @@ FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y \
     libcurl4 \
     libgomp1 \
+    libssl3 \
     curl \
     && rm -rf /var/lib/apt/lists/*
 

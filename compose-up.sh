@@ -34,11 +34,13 @@ if [[ "$(uname -s)" == "Darwin" ]]; then
 fi
 
 compose_files=(-f docker-compose.yml)
+extra_args=()
 if [[ "$mode" == "gpu" ]]; then
   compose_files+=(-f docker-compose.gpu.yml)
 elif [[ "$(uname -s)" == "Darwin" && "$(uname -m)" == "arm64" ]]; then
   compose_files+=(-f docker-compose.macos.yml)
+  extra_args+=(--build)
 fi
 
-echo "Running: docker compose ${compose_files[*]} up $*"
-docker compose "${compose_files[@]}" up "$@"
+echo "Running: docker compose ${compose_files[*]} up ${extra_args[*]:-} $*"
+docker compose "${compose_files[@]}" up "${extra_args[@]}" "$@"

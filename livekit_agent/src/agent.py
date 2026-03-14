@@ -95,6 +95,7 @@ async def my_agent(ctx: JobContext):
             base_url=llama_base_url,
             model=llama_model,
             api_key="no-key-needed",
+            extra_body={"chat_template_kwargs": {"enable_thinking": False}},
         ),
         tts=openai.TTS(
             base_url=tts_base_url,

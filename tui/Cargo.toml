@@ -1,0 +1,26 @@
+[package]
+name = "local-voice-ai-tui"
+version = "0.1.0"
+edition = "2021"
+description = "Terminal UI client for local-voice-ai"
+
+[[bin]]
+name = "local-voice-ai-tui"
+path = "src/main.rs"
+
+[dependencies]
+ratatui = "0.30"
+crossterm = "0.29"
+tokio = { version = "1", features = ["full"] }
+livekit = "0.7"
+livekit-api = "0.4"
+cpal = "0.17"
+reqwest = { version = "0.12", features = ["json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+clap = { version = "4", features = ["derive"] }
+anyhow = "1"
+futures = "0.3"
+parking_lot = "0.12"
+log = "0.4"
+env_logger = "0.11"
