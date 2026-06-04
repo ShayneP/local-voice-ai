@@ -100,7 +100,14 @@ async def my_agent(ctx: JobContext) -> None:
     session = AgentSession(
         stt=openai.STT(base_url=stt_base_url, model=stt_model, api_key=stt_api_key),
         llm=openai.LLM(base_url=llama_base_url, model=llama_model, api_key=llama_api_key),
-        tts=openai.TTS(base_url=tts_base_url, model="kokoro", voice=tts_voice, api_key=tts_api_key),
+        # The model name selects the wire protocol the openai TTS plugin uses:
+        # only {"tts-1", "tts-1-hd"} use the raw-audio-bytes stream that the
+        # Kokoro server speaks. Any other name (e.g. "kokoro") routes the plugin
+        # into the gpt-4o-mini-tts SSE reader, which parses Kokoro's binary audio
+        # body as text, pushes zero frames, and raises "no audio frames were
+        # pushed". Kokoro ignores the model field, so "tts-1" is purely a
+        # protocol selector here.
+        tts=openai.TTS(base_url=tts_base_url, model="tts-1", voice=tts_voice, api_key=tts_api_key),
         turn_detection=MultilingualModel(),
         vad=ctx.proc.userdata["vad"],
         preemptive_generation=True,

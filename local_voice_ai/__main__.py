@@ -41,7 +41,16 @@ def _build_specs(cfg: Config) -> list[ChildSpec]:
                     "--dev",
                     "--bind", "0.0.0.0",
                     "--port", str(cfg.livekit_bind_port),
-                    "--rtc-port", str(cfg.livekit_rtc_port),
+                    # livekit-server's RTC TCP port flag is the dotted config
+                    # key --rtc.tcp_port (there is no --rtc-port flag).
+                    "--rtc.tcp_port", str(cfg.livekit_rtc_port),
+                    # Pin the WebRTC UDP media port so it matches the published
+                    # container port, and advertise a host-reachable ICE address.
+                    # Without --node-ip the dev server auto-detects the container
+                    # IP (e.g. 172.x.x.x), which a browser on the host cannot
+                    # reach, so media never connects and the room never joins.
+                    "--udp-port", str(cfg.livekit_udp_port),
+                    "--node-ip", cfg.livekit_node_ip,
                 ],
                 ready_url=None,  # LiveKit dev server has no consistent /health
                 ready_timeout=30.0,

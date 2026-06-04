@@ -45,7 +45,13 @@ class Config:
     livekit_api_key: str = "devkey"
     livekit_api_secret: str = "secret"
     livekit_bind_port: int = 7880
-    livekit_rtc_port: int = 7881
+    livekit_rtc_port: int = 7881  # WebRTC over TCP (ICE/TCP fallback)
+    livekit_udp_port: int = 7882  # WebRTC over UDP (preferred media transport)
+    # IP the managed dev server advertises in ICE candidates. 127.0.0.1 is
+    # reachable both from a browser on the host (via Docker-published ports) and
+    # from the in-container agent (via loopback). Override (LIVEKIT_NODE_IP) when
+    # running the server on a remote host reached over the network.
+    livekit_node_ip: str = "127.0.0.1"
     manage_livekit: bool = True
 
     # --- LLM (llama.cpp by default) -------------------------------------
@@ -121,6 +127,8 @@ class Config:
             livekit_api_secret=os.getenv("LIVEKIT_API_SECRET", cls.livekit_api_secret),
             livekit_bind_port=int(os.getenv("LIVEKIT_BIND_PORT", str(cls.livekit_bind_port))),
             livekit_rtc_port=int(os.getenv("LIVEKIT_RTC_PORT", str(cls.livekit_rtc_port))),
+            livekit_udp_port=int(os.getenv("LIVEKIT_UDP_PORT", str(cls.livekit_udp_port))),
+            livekit_node_ip=os.getenv("LIVEKIT_NODE_IP", cls.livekit_node_ip),
             manage_livekit=_env_bool("MANAGE_LIVEKIT", _is_loopback(livekit_url)),
             #
             llama_base_url=llama_base_url,

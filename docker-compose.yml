@@ -28,6 +28,9 @@ services:
       - "${WEB_PORT:-8080}:8080"
       - "${LIVEKIT_BIND_PORT:-7880}:7880"
       - "${LIVEKIT_RTC_PORT:-7881}:7881"
+      # WebRTC media over UDP. The host port must equal the container port
+      # because LiveKit advertises this exact port in its ICE candidates.
+      - "${LIVEKIT_UDP_PORT:-7882}:7882/udp"
     volumes:
       - models:/models
     healthcheck:

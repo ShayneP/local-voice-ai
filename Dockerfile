@@ -66,8 +66,22 @@ RUN --mount=type=cache,target=/root/.cache/uv \
         --extra-index-url ${TORCH_INDEX_URL} \
         ".[ml]"
 
-# Drop in the binaries from upstream images
-COPY --from=llama-bin /app/llama-server /usr/local/bin/llama-server
+# Drop in the binaries from upstream images.
+#
+# llama-server is dynamically linked against shared libraries that ship next to
+# it in the upstream image's /app dir (libllama*.so, libggml*.so, libmtmd*.so),
+# plus the libggml-cpu-*.so / libggml-cuda.so backends it dlopen()s at runtime.
+# Its RUNPATH is the absolute build path /app/build/bin (which doesn't exist
+# here) and it has no $ORIGIN entry, so copying just the binary leaves the
+# loader unable to find libllama-server-impl.so. Copy the whole library set into
+# a dedicated dir and register it with ldconfig so both the link-time NEEDED
+# libs and the runtime-dlopen'd backends resolve. Registering via ldconfig
+# (rather than LD_LIBRARY_PATH) keeps the CUDA/driver search paths the nvidia
+# base image configures for the GPU build untouched.
+COPY --from=llama-bin /app/ /usr/local/lib/llama/
+RUN ln -s /usr/local/lib/llama/llama-server /usr/local/bin/llama-server \
+    && echo /usr/local/lib/llama > /etc/ld.so.conf.d/llama.conf \
+    && ldconfig
 COPY --from=livekit-bin /livekit-server /usr/local/bin/livekit-server
 
 # Drop in the static-exported frontend
