@@ -1,0 +1,25 @@
+# Audio-in half-cascade overlay.
+#
+# Feeds the user's mic audio straight into an audio-capable LLM (Gemma-4-12B)
+# running NATIVELY on the host with GPU/Metal acceleration, instead of the
+# in-container CPU llama-server (a 12B on CPU is far too slow for live voice).
+# livekit + kokoro + agent still run in the container and reach the host LLM via
+# host.docker.internal; the dedicated STT service is dropped automatically.
+#
+# Usage:
+#   1) start the native audio LLM:   ./scripts/run-native-audio-llm.sh
+#   2) docker compose -f docker-compose.yml -f docker-compose.audio.yml up
+#
+# The bind-mount serves the live ./local_voice_ai source, so no image rebuild is
+# needed to pick up audio-mode code. A non-loopback LLAMA_BASE_URL makes the
+# supervisor skip the in-container llama child (manage_llama=False).
+services:
+  app:
+    environment:
+      LLM_AUDIO_INPUT: "1"
+      LLAMA_BASE_URL: "http://host.docker.internal:11500/v1"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - models:/models
+      - ./local_voice_ai:/app/local_voice_ai

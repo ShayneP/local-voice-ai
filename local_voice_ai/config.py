@@ -65,6 +65,20 @@ class Config:
     llama_bind_port: int = 11434
     manage_llama: bool = True
 
+    # --- Audio-in half-cascade (LLM ingests audio directly; no STT) ------
+    # When enabled, the local llama child serves an audio-capable GGUF (with a
+    # multimodal projector) and the agent feeds mic audio straight to it via a
+    # custom RealtimeModel; the dedicated STT child is not spawned. Output is
+    # text, spoken by the normal TTS (Kokoro) — LiveKit's "half-cascade".
+    # Requires a llama.cpp build >= b9518 for the Gemma-4 "gemma4uv" projector.
+    llm_audio_input: bool = False
+    audio_llm_hf_repo: str = "unsloth/gemma-4-12b-it-GGUF"
+    audio_llm_quant: str = "Q4_K_M"
+    audio_llm_alias: str = "gemma-4-audio"
+    audio_llm_mmproj_url: str = (
+        "https://huggingface.co/unsloth/gemma-4-12b-it-GGUF/resolve/main/mmproj-BF16.gguf"
+    )
+
     # --- STT (Nemotron by default) --------------------------------------
     stt_provider: str = "nemotron"  # "nemotron" | "whisper"
     stt_base_url: str = "http://127.0.0.1:8000/v1"
@@ -102,6 +116,25 @@ class Config:
         stt_base_url = os.getenv("STT_BASE_URL")
         tts_base_url = os.getenv("TTS_BASE_URL", cls.tts_base_url)
 
+        # Audio-in half-cascade. When on, the llama child serves the audio model
+        # and STT is dropped; reuse the llama_* fields so the rest of the stack
+        # (base URL, model name) is unchanged.
+        llm_audio_input = _env_bool("LLM_AUDIO_INPUT", cls.llm_audio_input)
+        audio_llm_hf_repo = os.getenv("AUDIO_LLM_HF_REPO", cls.audio_llm_hf_repo)
+        audio_llm_quant = os.getenv("AUDIO_LLM_QUANT", cls.audio_llm_quant)
+        audio_llm_alias = os.getenv("AUDIO_LLM_ALIAS", cls.audio_llm_alias)
+        audio_llm_mmproj_url = os.getenv("AUDIO_LLM_MMPROJ_URL", cls.audio_llm_mmproj_url)
+        if llm_audio_input:
+            # Audio mode addresses the model by AUDIO_LLM_ALIAS and serves it from
+            # AUDIO_LLM_HF_REPO; the generic LLAMA_MODEL/ALIAS/HF_REPO are ignored.
+            llama_model = audio_llm_alias
+            llama_model_alias = audio_llm_alias
+            llama_hf_repo = audio_llm_hf_repo
+        else:
+            llama_model = os.getenv("LLAMA_MODEL", cls.llama_model)
+            llama_model_alias = os.getenv("LLAMA_MODEL_ALIAS", cls.llama_model_alias)
+            llama_hf_repo = os.getenv("LLAMA_HF_REPO", cls.llama_hf_repo)
+
         stt_provider = os.getenv("STT_PROVIDER", cls.stt_provider).lower()
         if stt_base_url is None:
             # Default STT URL depends on provider
@@ -132,21 +165,26 @@ class Config:
             manage_livekit=_env_bool("MANAGE_LIVEKIT", _is_loopback(livekit_url)),
             #
             llama_base_url=llama_base_url,
-            llama_model=os.getenv("LLAMA_MODEL", cls.llama_model),
+            llama_model=llama_model,
             llama_api_key=os.getenv("LLAMA_API_KEY", cls.llama_api_key),
-            llama_hf_repo=os.getenv("LLAMA_HF_REPO", cls.llama_hf_repo),
-            llama_model_alias=os.getenv("LLAMA_MODEL_ALIAS", cls.llama_model_alias),
+            llama_hf_repo=llama_hf_repo,
+            llama_model_alias=llama_model_alias,
             llama_ctx_size=int(os.getenv("LLAMA_CTX_SIZE", str(cls.llama_ctx_size))),
             llama_n_gpu_layers=int(os.getenv("LLAMA_N_GPU_LAYERS", str(cls.llama_n_gpu_layers))),
             llama_bind_port=int(os.getenv("LLAMA_BIND_PORT", str(cls.llama_bind_port))),
             manage_llama=_env_bool("MANAGE_LLAMA", _is_loopback(llama_base_url)),
+            llm_audio_input=llm_audio_input,
+            audio_llm_hf_repo=audio_llm_hf_repo,
+            audio_llm_quant=audio_llm_quant,
+            audio_llm_alias=audio_llm_alias,
+            audio_llm_mmproj_url=audio_llm_mmproj_url,
             #
             stt_provider=stt_provider,
             stt_base_url=stt_base_url,
             stt_model=os.getenv("STT_MODEL", default_stt_model),
             stt_api_key=os.getenv("STT_API_KEY", cls.stt_api_key),
             stt_bind_port=int(os.getenv("STT_BIND_PORT", str(cls.stt_bind_port))),
-            manage_stt=_env_bool("MANAGE_STT", _is_loopback(stt_base_url)),
+            manage_stt=_env_bool("MANAGE_STT", _is_loopback(stt_base_url) and not llm_audio_input),
             nemotron_model_name=os.getenv("NEMOTRON_MODEL_NAME", cls.nemotron_model_name),
             nemotron_model_id=os.getenv("NEMOTRON_MODEL_ID", cls.nemotron_model_id),
             voxbox_hf_repo_id=os.getenv("VOXBOX_HF_REPO_ID", cls.voxbox_hf_repo_id),
@@ -178,4 +216,5 @@ class Config:
             "TTS_BASE_URL": self.tts_base_url,
             "TTS_VOICE": self.tts_voice,
             "TTS_API_KEY": self.tts_api_key,
+            "LLM_AUDIO_INPUT": "1" if self.llm_audio_input else "0",
         }

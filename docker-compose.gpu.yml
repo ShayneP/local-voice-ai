@@ -1,0 +1,36 @@
+# Single-container GPU (NVIDIA/CUDA) deployment with audio-in half-cascade.
+#
+# Unlike docker-compose.audio.yml (the macOS/Metal hybrid that runs the LLM on
+# the host because Docker Desktop has no Metal passthrough), here EVERYTHING —
+# including the Gemma-4 audio LLM — runs inside one container on the GPU.
+#
+# Requires: an NVIDIA GPU + recent driver + the nvidia-container-toolkit
+# (so `docker` can expose the GPU). ~16GB+ VRAM recommended for the 12B at Q4.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
+#
+# First boot downloads the GGUF (~7GB) + mmproj into the `models` volume.
+services:
+  app:
+    build:
+      args:
+        # CUDA llama.cpp. Must be >= b9518 for the Gemma-4 "gemma4uv" audio
+        # projector; the :server-cuda tag tracks latest, so it qualifies. Pin a
+        # specific tag via the LLAMA_IMAGE env if you need reproducibility.
+        LLAMA_IMAGE: ${LLAMA_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-cuda}
+        PYTHON_BASE: ${PYTHON_BASE:-nvidia/cuda:12.4.1-runtime-ubuntu22.04}
+        TORCH_INDEX_URL: ${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu124}
+    environment:
+      LLM_AUDIO_INPUT: "1"
+      # Offload the whole model to the GPU (the base default is 0 = CPU).
+      LLAMA_N_GPU_LAYERS: ${LLAMA_N_GPU_LAYERS:-99}
+      DEVICE: cuda
+    # Expose the GPU to the container (needs nvidia-container-toolkit).
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

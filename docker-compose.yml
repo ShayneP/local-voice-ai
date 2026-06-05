@@ -24,6 +24,17 @@ services:
       LLAMA_CTX_SIZE: ${LLAMA_CTX_SIZE:-16384}
       LLAMA_N_GPU_LAYERS: ${LLAMA_N_GPU_LAYERS:-0}
       DEVICE: ${DEVICE:-cpu}
+      # --- Audio-in half-cascade (optional) -------------------------------
+      # Set LLM_AUDIO_INPUT=1 to feed mic audio straight into an audio-capable
+      # LLM (Gemma-4-12B by default) and drop the dedicated STT service; the LLM
+      # transcribes+reasons and Kokoro TTS speaks the reply. In this mode the
+      # generic LLAMA_MODEL/ALIAS above are ignored — the model is served from
+      # AUDIO_LLM_HF_REPO and addressed by AUDIO_LLM_ALIAS. Needs a llama.cpp
+      # image >= b9518 (the default :server tag tracks latest, so it qualifies).
+      LLM_AUDIO_INPUT: ${LLM_AUDIO_INPUT:-0}
+      AUDIO_LLM_HF_REPO: ${AUDIO_LLM_HF_REPO:-unsloth/gemma-4-12b-it-GGUF}
+      AUDIO_LLM_QUANT: ${AUDIO_LLM_QUANT:-Q4_K_M}
+      AUDIO_LLM_ALIAS: ${AUDIO_LLM_ALIAS:-gemma-4-audio}
     ports:
       - "${WEB_PORT:-8080}:8080"
       - "${LIVEKIT_BIND_PORT:-7880}:7880"

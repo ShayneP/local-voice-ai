@@ -60,18 +60,33 @@ def _build_specs(cfg: Config) -> list[ChildSpec]:
     # --- llama.cpp server (C++ binary) -------------------------------
     if cfg.manage_llama:
         llama_bin = os.getenv("LLAMA_BIN", "llama-server")
+        llama_argv = [
+            llama_bin,
+            "--host", "127.0.0.1",
+            "--port", str(cfg.llama_bind_port),
+            "--alias", cfg.llama_model_alias,
+            "--ctx-size", str(cfg.llama_ctx_size),
+            "--n-gpu-layers", str(cfg.llama_n_gpu_layers),
+        ]
+        if cfg.llm_audio_input:
+            # Audio-in half-cascade: serve an audio-capable GGUF + its multimodal
+            # projector. --jinja is required by the Gemma-4 chat template, and
+            # --reasoning-budget 0 disables "thinking" so the spoken reply isn't
+            # preceded by seconds of hidden reasoning (keeps TTFT ~1s). Needs a
+            # llama.cpp build >= b9518 for the gemma4uv projector.
+            llama_argv += [
+                "-hf", f"{cfg.audio_llm_hf_repo}:{cfg.audio_llm_quant}",
+                "--jinja",
+                "--reasoning-budget", "0",
+            ]
+            if cfg.audio_llm_mmproj_url:
+                llama_argv += ["--mmproj-url", cfg.audio_llm_mmproj_url]
+        else:
+            llama_argv += ["--hf-repo", cfg.llama_hf_repo]
         specs.append(
             ChildSpec(
                 name="llama",
-                argv=[
-                    llama_bin,
-                    "--host", "127.0.0.1",
-                    "--port", str(cfg.llama_bind_port),
-                    "--hf-repo", cfg.llama_hf_repo,
-                    "--alias", cfg.llama_model_alias,
-                    "--ctx-size", str(cfg.llama_ctx_size),
-                    "--n-gpu-layers", str(cfg.llama_n_gpu_layers),
-                ],
+                argv=llama_argv,
                 env={"HF_HOME": os.getenv("HF_HOME", "/models"), "XDG_CACHE_HOME": os.getenv("XDG_CACHE_HOME", "/models")},
                 ready_url=f"http://127.0.0.1:{cfg.llama_bind_port}/v1/models",
                 ready_timeout=900.0,  # first-run model download can be slow

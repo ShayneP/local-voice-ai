@@ -48,10 +48,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         tini \
     && rm -rf /var/lib/apt/lists/*
 
+# The default base (python:3.11-slim) ships Python, but CUDA bases
+# (nvidia/cuda:*-runtime, used for GPU builds) do not — install it when absent.
+RUN command -v python3 >/dev/null 2>&1 || ( \
+        apt-get update \
+        && apt-get install -y --no-install-recommends python3 python3-pip \
+        && rm -rf /var/lib/apt/lists/* )
+RUN command -v python >/dev/null 2>&1 || ln -s "$(command -v python3)" /usr/local/bin/python
+
 WORKDIR /app
 
 # Install Python deps via uv for speed and a reproducible env
-RUN pip install --no-cache-dir uv
+RUN python -m pip install --no-cache-dir uv
 
 ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu
 
