@@ -3,6 +3,7 @@
   <h1>Local Voice AI</h1>
   <p>This project's goal is to enable anyone to easily build a powerful, private, local voice AI agent.</p>
   <p>A real-time voice AI assistant — STT, LLM, TTS — running in <strong>one container</strong>, supervised by a single Python parent process. Powered by <a href="https://docs.livekit.io/agents?utm_source=local-voice-ai">LiveKit Agents</a>.</p>
+  <p>To keep up with what I'm building or request new features <a href="https://x.com/intent/follow?screen_name=ShayneParlo">send me a DM on X</a></p>
 </div>
 
 ## Overview
