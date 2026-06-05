@@ -32,9 +32,13 @@ appends the message to our chat_ctx via ``update_chat_ctx`` and calls
 ``generate_reply`` with no pending audio; we then send a plain text chat-completion
 built from history.
 
+Tool calling: function tools are advertised on each request (OpenAI ``tools``);
+streamed ``tool_calls`` are emitted as ``FunctionCall`` items, the framework
+executes them and appends the results to chat_ctx, and a follow-up
+``generate_reply`` produces the spoken answer — for both audio and text turns.
+
 Known limitations (prototype):
   * Transcripts are whole-utterance (post-VAD), not interim/streaming.
-  * Tool/function calling is not wired (audio tool-calling is immature).
 """
 
 from __future__ import annotations
@@ -60,6 +64,8 @@ from livekit.agents.llm import (
     RealtimeCapabilities,
     ToolContext,
 )
+from livekit.agents.llm.tool_context import is_function_tool
+from livekit.agents.llm.utils import build_legacy_openai_schema
 from livekit.agents.types import NOT_GIVEN, NotGivenOr
 
 logger = logging.getLogger("audio-llm")
@@ -114,7 +120,7 @@ class AudioLLM(llm.RealtimeModel):
                 manual_function_calls=False,
                 mutable_chat_context=True,
                 mutable_instructions=True,
-                mutable_tools=False,
+                mutable_tools=True,
                 per_response_tool_choice=False,
                 supports_say=False,
             )
@@ -172,15 +178,34 @@ class AudioLLMSession(llm.RealtimeSession):
         # into the session before each turn: every generate_reply is a stateless
         # HTTP call, so the model only remembers what we replay here.
         self._history: list[dict] = []
+        self._tool_schemas: list[dict] = []  # OpenAI tool descriptions
+        self._tool_choice: object = "auto"
 
     # --- context / config ------------------------------------------------
     @property
     def chat_ctx(self) -> ChatContext:
-        # Expose our session-owned history so the framework (and the text-input
-        # path) sees the full conversation.
+        # Expose our session-owned history (incl. tool calls/outputs) so the
+        # framework's text-input and tool-reply paths see the full conversation.
         ctx = ChatContext.empty()
         for m in self._history:
-            ctx.add_message(role=m["role"], content=m["content"])
+            role = m.get("role")
+            if role == "tool":
+                ctx.items.append(
+                    llm.FunctionCallOutput(
+                        call_id=m["tool_call_id"], name="", output=m.get("content") or "", is_error=False
+                    )
+                )
+            elif role == "assistant" and m.get("tool_calls"):
+                for tc in m["tool_calls"]:
+                    ctx.items.append(
+                        llm.FunctionCall(
+                            call_id=tc["id"],
+                            name=tc["function"]["name"],
+                            arguments=tc["function"]["arguments"],
+                        )
+                    )
+            else:
+                ctx.add_message(role=role, content=m.get("content") or "")
         return ctx
 
     @property
@@ -192,22 +217,51 @@ class AudioLLMSession(llm.RealtimeSession):
 
     async def update_chat_ctx(self, chat_ctx: ChatContext) -> None:
         # Rebuild history from the framework's view. This is how typed text input
-        # enters the session: the framework appends the user's message to our
-        # chat_ctx and calls this immediately before generate_reply().
+        # (a user message) and tool results (function-call outputs) enter the
+        # session before generate_reply(). Consecutive function calls are grouped
+        # into one assistant message (OpenAI tool-call format).
         history: list[dict] = []
-        for item in chat_ctx.items:
-            if getattr(item, "type", None) != "message" or item.role not in ("user", "assistant"):
-                continue
-            text = item.text_content
-            if text:
-                history.append({"role": item.role, "content": text})
+        items = chat_ctx.items
+        i = 0
+        while i < len(items):
+            item = items[i]
+            t = getattr(item, "type", None)
+            if t == "function_call":
+                calls = []
+                while i < len(items) and getattr(items[i], "type", None) == "function_call":
+                    fc = items[i]
+                    calls.append({
+                        "id": fc.call_id,
+                        "type": "function",
+                        "function": {"name": fc.name, "arguments": fc.arguments},
+                    })
+                    i += 1
+                history.append({"role": "assistant", "content": None, "tool_calls": calls})
+            elif t == "function_call_output":
+                history.append({"role": "tool", "tool_call_id": item.call_id, "content": item.output})
+                i += 1
+            elif t == "message" and item.role in ("user", "assistant", "system"):
+                text = item.text_content
+                if text:
+                    history.append({"role": item.role, "content": text})
+                i += 1
+            else:
+                i += 1
         self._history = history
 
     async def update_tools(self, tools: list[llm.Tool]) -> None:
-        pass  # tool calling not wired for the audio path
+        schemas: list[dict] = []
+        for tool in tools:
+            try:
+                if is_function_tool(tool):
+                    schemas.append(build_legacy_openai_schema(tool))
+            except Exception:  # noqa: BLE001
+                logger.warning("could not serialize a tool for the audio LLM", exc_info=True)
+        self._tool_schemas = schemas
 
     def update_options(self, *, tool_choice: NotGivenOr = NOT_GIVEN) -> None:
-        pass
+        if utils.is_given(tool_choice):
+            self._tool_choice = tool_choice if tool_choice else "auto"
 
     # --- audio input -----------------------------------------------------
     def push_audio(self, frame: rtc.AudioFrame) -> None:
@@ -300,12 +354,12 @@ class AudioLLMSession(llm.RealtimeSession):
         if not fut.done():
             fut.set_result(gen_ev)
         self.emit("generation_created", gen_ev)
-        fn_ch.close()  # no tool calls on the audio path
 
         wav = self._pending_wav
         self._pending_wav = None
         reply_text = ""
         transcript = ""
+        tool_calls: list[dict] = []
         try:
             if wav:
                 # Audio turn. Transcribe FIRST: Gemma-4 misreads self-referential
@@ -330,7 +384,14 @@ class AudioLLMSession(llm.RealtimeSession):
                     logger.warning("generate_reply with neither audio nor text; empty reply")
                     return
                 messages = self._build_text_messages(sys_override)
-            reply_text = await self._stream_completion(messages, text_ch)
+            reply_text, tool_calls = await self._stream_completion(messages, text_ch)
+            # Emit any tool calls so the framework executes them; it then appends
+            # the results to our chat_ctx and re-calls generate_reply for the
+            # spoken answer (the result round-trips through update_chat_ctx).
+            for tc in tool_calls:
+                fn_ch.send_nowait(
+                    llm.FunctionCall(call_id=tc["id"], name=tc["name"], arguments=tc["arguments"])
+                )
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001
@@ -346,19 +407,33 @@ class AudioLLMSession(llm.RealtimeSession):
             )
         finally:
             text_ch.close()
-        # Record the turn. Audio turns: the user transcript isn't in history yet, so
-        # append it. Text turns: the user message is already in history (added via
-        # update_chat_ctx), so append only the reply. Skipped on interrupt.
+            fn_ch.close()
+        # Record the turn. Audio turns: append the user transcript (not yet in
+        # history). Then append the assistant's tool calls — so the follow-up
+        # tool-reply request includes them — or its plain text reply.
         if wav and transcript:
             self._history.append({"role": "user", "content": transcript})
-        if reply_text:
+        if tool_calls:
+            self._history.append({
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": tc["id"],
+                        "type": "function",
+                        "function": {"name": tc["name"], "arguments": tc["arguments"]},
+                    }
+                    for tc in tool_calls
+                ],
+            })
+        elif reply_text:
             self._history.append({"role": "assistant", "content": reply_text})
         if len(self._history) > _MAX_HISTORY_MESSAGES:
             del self._history[: len(self._history) - _MAX_HISTORY_MESSAGES]
 
     async def _stream_completion(
         self, messages: list[dict], text_ch: utils.aio.Chan[str]
-    ) -> str:
+    ) -> tuple[str, list[dict]]:
         payload = {
             "model": self._opts.model,
             "messages": messages,
@@ -366,7 +441,11 @@ class AudioLLMSession(llm.RealtimeSession):
             "temperature": self._opts.temperature,
             "max_tokens": self._opts.max_tokens,
         }
+        if self._tool_schemas:
+            payload["tools"] = self._tool_schemas
+            payload["tool_choice"] = self._tool_choice
         parts: list[str] = []
+        tool_calls: dict[int, dict] = {}  # stream index -> {id, name, arguments}
         session = self._model._ensure_session()
         async with session.post(self._url, json=payload, headers=self._headers) as resp:
             resp.raise_for_status()
@@ -386,7 +465,22 @@ class AudioLLMSession(llm.RealtimeSession):
                 if content:
                     text_ch.send_nowait(content)
                     parts.append(content)
-        return "".join(parts)
+                for tc in delta.get("tool_calls") or []:
+                    slot = tool_calls.setdefault(
+                        tc.get("index", 0), {"id": "", "name": "", "arguments": ""}
+                    )
+                    if tc.get("id"):
+                        slot["id"] = tc["id"]
+                    fn = tc.get("function") or {}
+                    if fn.get("name"):
+                        slot["name"] = fn["name"]
+                    if fn.get("arguments"):
+                        slot["arguments"] += fn["arguments"]
+        calls = [c for c in tool_calls.values() if c["name"]]
+        for c in calls:
+            if not c["id"]:
+                c["id"] = utils.shortuuid("call_")
+        return "".join(parts), calls
 
     def _system_prefix(self, sys_override: str | None) -> list[dict]:
         system = sys_override or self._instructions

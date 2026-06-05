@@ -143,3 +143,57 @@ class TestAudioLLMPlugin:
         assert messages[0]["role"] == "system"
         assert messages[-1] == {"role": "user", "content": "What is two plus three?"}
         assert all(isinstance(msg["content"], str) for msg in messages)
+
+
+class TestAudioLLMTools:
+    def test_update_tools_builds_openai_schema(self) -> None:
+        import asyncio
+
+        from livekit.agents import function_tool
+
+        @function_tool
+        async def multiply_numbers(number1: int, number2: int) -> str:
+            """Multiply two numbers together."""
+            return "x"
+
+        m = AudioLLM(base_url="http://127.0.0.1:11434/v1", model="gemma-4-audio")
+        s = m.session()
+        asyncio.run(s.update_tools([multiply_numbers]))
+        assert len(s._tool_schemas) == 1
+        fn = s._tool_schemas[0]
+        assert fn["type"] == "function"
+        assert fn["function"]["name"] == "multiply_numbers"
+        assert "number1" in fn["function"]["parameters"]["properties"]
+
+    def test_function_call_roundtrips_through_chat_ctx(self) -> None:
+        import asyncio
+
+        from livekit.agents.llm import FunctionCallOutput
+
+        m = AudioLLM(base_url="http://127.0.0.1:11434/v1", model="gemma-4-audio")
+        s = m.session()
+        s._history = [
+            {"role": "user", "content": "what is 6 times 7?"},
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "call1",
+                        "type": "function",
+                        "function": {"name": "multiply_numbers", "arguments": '{"number1": 6, "number2": 7}'},
+                    }
+                ],
+            },
+        ]
+        # The framework appends the tool output to our chat_ctx and re-syncs us.
+        ctx = s.chat_ctx
+        ctx.items.append(FunctionCallOutput(call_id="call1", name="multiply_numbers", output="42", is_error=False))
+        asyncio.run(s.update_chat_ctx(ctx))
+        # The assistant tool-call survives the round-trip and the output follows it.
+        assert [m.get("role") for m in s._history] == ["user", "assistant", "tool"]
+        assert s._history[1]["tool_calls"][0]["id"] == "call1"
+        assert s._history[2]["tool_call_id"] == "call1"
+        # The resulting request is valid OpenAI shape (tool message references the call).
+        msgs = s._build_text_messages(sys_override=None)
+        assert msgs[-1]["role"] == "tool" and msgs[-1]["tool_call_id"] == "call1"
