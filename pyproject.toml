@@ -1,0 +1,66 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "local-voice-ai"
+version = "0.1.0"
+description = "Local voice AI assistant: a single supervised process bundling LiveKit Agents, llama.cpp, Nemotron STT, and Kokoro TTS."
+requires-python = ">=3.10"
+
+dependencies = [
+    # Agent framework
+    "livekit-agents[silero,turn-detector,openai]~=1.3",
+    "livekit-plugins-noise-cancellation~=0.2",
+    "livekit-api>=0.8",
+    "python-dotenv",
+
+    # Supervisor + token-mint API
+    "fastapi",
+    "uvicorn[standard]",
+    "httpx",
+    "pydantic>=2",
+
+    # Nemotron STT (full deps live behind 'stt' extra to avoid forcing torch
+    # into every venv during dev)
+    "numpy",
+    "soundfile",
+    "python-multipart",
+]
+
+[project.optional-dependencies]
+# Heavy ML deps — installed in production runtime, optional for editing/CI.
+ml = [
+    "torch",
+    "torchaudio",
+    "nemo-toolkit[asr]",
+    "kokoro>=0.9",
+    "huggingface_hub",
+]
+# Whisper fallback (vox-box) — only when STT_PROVIDER=whisper.
+whisper = [
+    "vox-box",
+]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "ruff",
+]
+
+[project.scripts]
+local-voice-ai = "local_voice_ai.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["local_voice_ai*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "B", "A", "C4", "UP", "SIM", "RUF"]
+ignore = ["E501"]

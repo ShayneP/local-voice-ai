@@ -1,13 +1,11 @@
-import { headers } from 'next/headers';
-import { getAppConfig } from '@/lib/utils';
+import { APP_CONFIG_DEFAULTS } from '@/app-config';
 
 interface LayoutProps {
   children: React.ReactNode;
 }
 
-export default async function Layout({ children }: LayoutProps) {
-  const hdrs = await headers();
-  const { companyName, logo, logoDark } = await getAppConfig(hdrs);
+export default function Layout({ children }: LayoutProps) {
+  const { companyName, logo, logoDark } = APP_CONFIG_DEFAULTS;
 
   return (
     <>
