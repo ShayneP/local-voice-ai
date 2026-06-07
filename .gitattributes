@@ -1,0 +1,22 @@
+# Normalize line endings so CRLF never sneaks into files consumed by Linux
+# containers or bash on macOS. The repo always stores LF; Windows working trees
+# may render CRLF locally, but committed content stays LF.
+* text=auto
+
+# These MUST be LF even in the working tree — a stray CR breaks bash shebangs
+# (`/usr/bin/env bash\r`), Dockerfile RUN lines, and env_file value parsing.
+*.sh           text eol=lf
+run            text eol=lf
+*.py           text eol=lf
+*.yml          text eol=lf
+*.yaml         text eol=lf
+Dockerfile     text eol=lf
+.env           text eol=lf
+.gitignore     text eol=lf
+.gitattributes text eol=lf
+
+# Windows-only helper: conventional CRLF (PowerShell accepts either).
+*.ps1          text eol=crlf
+
+# Large generated lockfile — leave bytes untouched.
+uv.lock        -text

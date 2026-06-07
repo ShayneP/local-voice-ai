@@ -1,6 +1,10 @@
 venv/
 inference/llama/models/
 
+# Per-machine Compose override (e.g. opting this box into the GPU stack).
+# Local convenience only — the committed default stays CPU for clones/CI.
+docker-compose.override.yml
+
 # Python cache artifacts
 **/__pycache__/
 *.pyc

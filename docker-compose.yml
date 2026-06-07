@@ -3,10 +3,12 @@ services:
     build:
       context: .
       args:
-        # CPU is the default. For GPU:
+        # CPU is the default. For GPU, prefer the overlay (it sets these for you):
+        #   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
+        # Equivalent explicit build args:
         #   docker compose build --build-arg LLAMA_IMAGE=ghcr.io/ggml-org/llama.cpp:server-cuda \
-        #                       --build-arg PYTHON_BASE=nvidia/cuda:12.4.1-runtime-ubuntu22.04 \
-        #                       --build-arg TORCH_INDEX_URL=https://download.pytorch.org/whl/cu124
+        #                       --build-arg PYTHON_BASE=nvidia/cuda:12.8.1-runtime-ubuntu24.04 \
+        #                       --build-arg TORCH_INDEX_URL=https://download.pytorch.org/whl/cu128
         LLAMA_IMAGE: ${LLAMA_IMAGE:-ghcr.io/ggml-org/llama.cpp:server}
         LIVEKIT_IMAGE: ${LIVEKIT_IMAGE:-livekit/livekit-server:latest}
         PYTHON_BASE: ${PYTHON_BASE:-python:3.11-slim}

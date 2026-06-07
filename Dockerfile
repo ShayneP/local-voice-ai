@@ -35,7 +35,13 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PYTORCH_ENABLE_MPS_FALLBACK=1 \
     HF_HOME=/models \
-    XDG_CACHE_HOME=/models
+    XDG_CACHE_HOME=/models \
+    # Ubuntu-based CUDA bases (GPU build) ship a PEP 668 "externally managed"
+    # system Python that refuses pip/uv system installs. We deliberately install
+    # into the system env (single-purpose image), so opt out. No-op on the
+    # default python:3.11-slim base, which isn't externally managed.
+    PIP_BREAK_SYSTEM_PACKAGES=1 \
+    UV_BREAK_SYSTEM_PACKAGES=1
 
 # System libs needed by the inference stack and the binaries
 RUN apt-get update && apt-get install -y --no-install-recommends \

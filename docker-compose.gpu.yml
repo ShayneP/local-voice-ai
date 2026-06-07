@@ -19,8 +19,12 @@ services:
         # projector; the :server-cuda tag tracks latest, so it qualifies. Pin a
         # specific tag via the LLAMA_IMAGE env if you need reproducibility.
         LLAMA_IMAGE: ${LLAMA_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-cuda}
-        PYTHON_BASE: ${PYTHON_BASE:-nvidia/cuda:12.4.1-runtime-ubuntu22.04}
-        TORCH_INDEX_URL: ${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu124}
+        # The runtime base must be Ubuntu 24.04: the :server-cuda binary is built
+        # there (glibc 2.39 / GLIBCXX_3.4.32) and won't load on a 22.04 base. CUDA
+        # 12.8 + cu128 wheels are required for Blackwell (RTX 50xx, sm_120); they
+        # also run every older NVIDIA arch, so this is the safe default for all GPUs.
+        PYTHON_BASE: ${PYTHON_BASE:-nvidia/cuda:12.8.1-runtime-ubuntu24.04}
+        TORCH_INDEX_URL: ${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu128}
     environment:
       LLM_AUDIO_INPUT: "1"
       # Offload the whole model to the GPU (the base default is 0 = CPU).
