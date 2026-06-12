@@ -34,8 +34,20 @@ export function useHelixMessages(room?: Room): {
   useEffect(() => {
     if (!room) return;
     const handler = async (reader: any) => {
+      const dbgId = `dbg_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: dbgId,
+          role: 'assistant',
+          text: `📩 受信開始 (size=${reader?.info?.size ?? '?'})`,
+          ts: Date.now(),
+        },
+      ]);
       try {
         const raw = await reader.readAll();
+        // 受信成功 → マーカーを除去
+        setMessages((prev) => prev.filter((m) => m.id !== dbgId));
         const msg = JSON.parse(raw) as HelixMessage;
         if (!msg.id || !msg.role || typeof msg.text !== 'string') return;
         setMessages((prev) =>
@@ -80,12 +92,12 @@ export function useHelixMessages(room?: Room): {
       .reverse()
       .find((t) => t.participantInfo?.identity === room.localParticipant?.identity);
     if (!latestLocal) return;
-    const segId = latestLocal.streamInfo?.id ?? null;
-    currentSegmentIdRef.current = segId;
-    // user確定時に表示していたセグメントは再表示しない（滞留・二重表示防止）
-    if (segId && segId === consumedSegmentIdRef.current) return;
-    const isFinal =
-      latestLocal.streamInfo?.attributes?.['lk.transcription_final'] === 'true';
+    const attrs = latestLocal.streamInfo?.attributes ?? {};
+    const segKey = attrs['lk.segment_id'] ?? latestLocal.streamInfo?.id ?? null;
+    currentSegmentIdRef.current = segKey;
+    // user確定時に表示していたセグメント(発話)は再表示しない（滞留・二重表示防止）
+    if (segKey && segKey === consumedSegmentIdRef.current) return;
+    const isFinal = attrs['lk.transcription_final'] === 'true';
     if (isFinal) {
       setInterimText(null);
     } else {
