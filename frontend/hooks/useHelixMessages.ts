@@ -33,6 +33,7 @@ export function useHelixMessages(room?: Room): {
   const consumedSegmentIdRef = useRef<string | null>(null);
   const currentSegmentIdRef = useRef<string | null>(null);
   const partsBufRef = useRef<Map<string, Map<number, string>>>(new Map());
+  const lastConfirmedUserTextRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!room) return;
@@ -70,6 +71,7 @@ export function useHelixMessages(room?: Room): {
         if (msg.role === 'user') {
           // 確定でinterim破棄 + 表示中セグメントを消費済みに
           consumedSegmentIdRef.current = currentSegmentIdRef.current;
+          lastConfirmedUserTextRef.current = msg.text;
           setInterimText(null);
         }
       } catch (e) {
@@ -112,7 +114,11 @@ export function useHelixMessages(room?: Room): {
     // user確定時に表示していたセグメント(発話)は再表示しない（滞留・二重表示防止）
     if (segKey && segKey === consumedSegmentIdRef.current) return;
     const isFinal = attrs['lk.transcription_final'] === 'true';
-    if (isFinal) {
+    // 属性が無い環境向けフォールバック: 確定済みuserメッセージと同一テキストは破棄
+    const matchesConfirmed =
+      lastConfirmedUserTextRef.current !== null &&
+      (latestLocal.text || '').trim() === lastConfirmedUserTextRef.current.trim();
+    if (isFinal || matchesConfirmed) {
       setInterimText(null);
     } else {
       setInterimText(latestLocal.text || null);
