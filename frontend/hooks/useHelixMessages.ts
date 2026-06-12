@@ -9,6 +9,8 @@ export interface HelixMessage {
   role: 'user' | 'assistant';
   text: string; // raw — 一切加工しない
   ts: number;
+  part?: number; // 分割送信時のパート番号
+  parts?: number; // 総パート数
 }
 
 const TOPIC = 'helix.chat';
@@ -30,6 +32,7 @@ export function useHelixMessages(room?: Room): {
   // user確定時に表示中だったセグメントIDを記録し、同一セグメントの再表示を抑止
   const consumedSegmentIdRef = useRef<string | null>(null);
   const currentSegmentIdRef = useRef<string | null>(null);
+  const partsBufRef = useRef<Map<string, Map<number, string>>>(new Map());
 
   useEffect(() => {
     if (!room) return;
@@ -50,6 +53,17 @@ export function useHelixMessages(room?: Room): {
         setMessages((prev) => prev.filter((m) => m.id !== dbgId));
         const msg = JSON.parse(raw) as HelixMessage;
         if (!msg.id || !msg.role || typeof msg.text !== 'string') return;
+        // 分割メッセージの再結合（agentが800バイト単位で分割送信する）
+        const totalParts = msg.parts ?? 1;
+        if (totalParts > 1) {
+          const buf = partsBufRef.current.get(msg.id) ?? new Map<number, string>();
+          buf.set(msg.part ?? 0, msg.text);
+          partsBufRef.current.set(msg.id, buf);
+          if (buf.size < totalParts) return; // 全パート未着
+          const joined = Array.from({ length: totalParts }, (_, i) => buf.get(i) ?? '').join('');
+          partsBufRef.current.delete(msg.id);
+          msg.text = joined;
+        }
         setMessages((prev) =>
           prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]
         );
