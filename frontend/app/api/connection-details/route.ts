@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { AccessToken, type AccessTokenOptions, type VideoGrant } from 'livekit-server-sdk';
 import { RoomConfiguration } from '@livekit/protocol';
+import { auth } from '@/auth';
 
 type ConnectionDetails = {
   serverUrl: string;
@@ -9,12 +10,10 @@ type ConnectionDetails = {
   participantToken: string;
 };
 
-// NOTE: you are expected to define the following environment variables in `.env.local`:
 const API_KEY = process.env.LIVEKIT_API_KEY;
 const API_SECRET = process.env.LIVEKIT_API_SECRET;
 const LIVEKIT_URL = process.env.NEXT_PUBLIC_LIVEKIT_URL ?? process.env.LIVEKIT_URL;
 
-// don't cache the results
 export const revalidate = 0;
 
 export async function POST(req: Request) {
@@ -29,32 +28,38 @@ export async function POST(req: Request) {
       throw new Error('LIVEKIT_API_SECRET is not defined');
     }
 
-    // Parse agent configuration from request body
+    // セッションからentityIdを取得
+    const session = await auth();
+    const entityId = session?.user?.id ?? 'anonymous';
+
     const body = await req.json();
     const agentName: string = body?.room_config?.agents?.[0]?.agent_name;
 
-    // Generate participant token
-    const participantName = 'user';
+    const participantName = session?.user?.name ?? 'user';
     const participantIdentity = `voice_assistant_user_${Math.floor(Math.random() * 10_000)}`;
     const roomName = `voice_assistant_room_${Math.floor(Math.random() * 10_000)}`;
 
     const participantToken = await createParticipantToken(
-      { identity: participantIdentity, name: participantName },
+      {
+        identity: participantIdentity,
+        name: participantName,
+        // entityIdをmetadataに仕込む → agent.pyで受け取る（Phase 2）
+        metadata: JSON.stringify({ entityId }),
+      },
       roomName,
       agentName
     );
 
-    // Return connection details
     const data: ConnectionDetails = {
       serverUrl: LIVEKIT_URL,
       roomName,
       participantToken: participantToken,
       participantName,
     };
-    const headers = new Headers({
-      'Cache-Control': 'no-store',
+
+    return NextResponse.json(data, {
+      headers: new Headers({ 'Cache-Control': 'no-store' }),
     });
-    return NextResponse.json(data, { headers });
   } catch (error) {
     if (error instanceof Error) {
       console.error(error);
@@ -80,12 +85,10 @@ function createParticipantToken(
     canSubscribe: true,
   };
   at.addGrant(grant);
-
   if (agentName) {
     at.roomConfig = new RoomConfiguration({
       agents: [{ agentName }],
     });
   }
-
   return at.toJwt();
 }

@@ -26,9 +26,12 @@
     "mime": "^4.0.7",
     "motion": "^12.16.0",
     "next": "15.5.7",
+    "next-auth": "5.0.0-beta.31",
     "next-themes": "^0.4.6",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.3.0"
   },

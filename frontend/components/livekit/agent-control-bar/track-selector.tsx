@@ -72,10 +72,7 @@ export function TrackSelector({
         onActiveDeviceChange={onActiveDeviceChange}
         className={cn([
           'rounded-l-none pl-2',
-          'peer-data-[state=off]/track:text-destructive',
-          'hover:text-foreground focus:text-foreground',
-          'hover:peer-data-[state=off]/track:text-foreground',
-          'focus:peer-data-[state=off]/track:text-destructive',
+          'text-foreground hover:text-foreground focus:text-foreground',
         ])}
       />
     </div>

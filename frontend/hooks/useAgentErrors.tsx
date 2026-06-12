@@ -9,34 +9,10 @@ export function useAgentErrors() {
   useEffect(() => {
     if (isConnected && agent.state === 'failed') {
       const reasons = agent.failureReasons;
+      const description = reasons.length > 1 ? reasons.join(' / ') : undefined;
+      const title = reasons.length === 1 ? reasons[0] : 'セッションエラー';
 
-      toastAlert({
-        title: 'Session ended',
-        description: (
-          <>
-            {reasons.length > 1 && (
-              <ul className="list-inside list-disc">
-                {reasons.map((reason) => (
-                  <li key={reason}>{reason}</li>
-                ))}
-              </ul>
-            )}
-            {reasons.length === 1 && <p className="w-full">{reasons[0]}</p>}
-            <p className="w-full">
-              <a
-                target="_blank"
-                rel="noopener noreferrer"
-                href="https://docs.livekit.io/agents/start/voice-ai/"
-                className="whitespace-nowrap underline"
-              >
-                See quickstart guide
-              </a>
-              .
-            </p>
-          </>
-        ),
-      });
-
+      toastAlert({ title, description });
       end();
     }
   }, [agent, isConnected, end]);

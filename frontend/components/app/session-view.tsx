@@ -1,8 +1,8 @@
 'use client';
-
 import React, { useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
-import { useSessionContext, useSessionMessages } from '@livekit/components-react';
+import { useSessionContext } from '@livekit/components-react';
+import { useHelixMessages } from '@/hooks/useHelixMessages';
 import type { AppConfig } from '@/app-config';
 import { ChatTranscript } from '@/components/app/chat-transcript';
 import { PreConnectMessage } from '@/components/app/preconnect-message';
@@ -65,8 +65,8 @@ export const SessionView = ({
   ...props
 }: React.ComponentProps<'section'> & SessionViewProps) => {
   const session = useSessionContext();
-  const { messages } = useSessionMessages(session);
-  const [chatOpen, setChatOpen] = useState(false);
+  const { messages, interimText } = useHelixMessages(session?.room);
+  const [chatOpen, setChatOpen] = useState(true);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
   const controls: ControlBarControls = {
@@ -77,12 +77,17 @@ export const SessionView = ({
     screenShare: appConfig.supportsVideoInput,
   };
 
+  // 新しいメッセージが来たら最下部へスクロール
+  // ユーザーが上にスクロールして読んでいる場合は邪魔しない
   useEffect(() => {
+    const el = scrollAreaRef.current;
+    if (!el) return;
+    const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
     const lastMessage = messages.at(-1);
-    const lastMessageIsLocal = lastMessage?.from?.isLocal === true;
-
-    if (scrollAreaRef.current && lastMessageIsLocal) {
-      scrollAreaRef.current.scrollTop = scrollAreaRef.current.scrollHeight;
+    const lastMessageIsLocal = lastMessage?.role === 'user';
+    // 自分のメッセージ送信時 or 最下部付近なら自動スクロール
+    if (lastMessageIsLocal || isNearBottom) {
+      el.scrollTop = el.scrollHeight;
     }
   }, [messages]);
 
@@ -96,10 +101,11 @@ export const SessionView = ({
         )}
       >
         <Fade top className="absolute inset-x-4 top-0 h-40" />
-        <ScrollArea ref={scrollAreaRef} className="px-4 pt-40 pb-[150px] md:px-6 md:pb-[200px]">
+        <ScrollArea ref={scrollAreaRef} className="px-4 pt-40 pb-[220px] md:px-6 md:pb-[260px]">
           <ChatTranscript
             hidden={!chatOpen}
             messages={messages}
+            interimText={interimText}
             className="mx-auto max-w-2xl space-y-3 transition-opacity duration-300 ease-out"
           />
         </ScrollArea>

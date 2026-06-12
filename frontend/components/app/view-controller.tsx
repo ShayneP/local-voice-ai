@@ -1,5 +1,6 @@
 'use client';
 
+import { useCallback } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useSessionContext } from '@livekit/components-react';
 import type { AppConfig } from '@/app-config';
@@ -34,6 +35,10 @@ interface ViewControllerProps {
 export function ViewController({ appConfig }: ViewControllerProps) {
   const { isConnected, start } = useSessionContext();
 
+  const handleStartCall = useCallback(() => {
+    start({ tracks: { microphone: { enabled: false } } });
+  }, [start]);
+
   return (
     <AnimatePresence mode="wait">
       {/* Welcome view */}
@@ -42,7 +47,7 @@ export function ViewController({ appConfig }: ViewControllerProps) {
           key="welcome"
           {...VIEW_MOTION_PROPS}
           startButtonText={appConfig.startButtonText}
-          onStartCall={start}
+          onStartCall={handleStartCall}
         />
       )}
       {/* Session view */}

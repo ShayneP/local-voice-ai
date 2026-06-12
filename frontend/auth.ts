@@ -69,6 +69,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
     async session({ session, token }) {
       (session as any).access_token = token.access_token;
+      (session as any).expires_at = token.expires_at;
       (session as any).error = token.error;
 
       // entity_id (sub) を取得

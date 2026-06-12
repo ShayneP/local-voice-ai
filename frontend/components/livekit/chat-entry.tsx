@@ -1,19 +1,20 @@
 import * as React from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { cn } from '@/lib/utils';
 
 export interface ChatEntryProps extends React.HTMLAttributes<HTMLLIElement> {
-  /** The locale to use for the timestamp. */
   locale: string;
-  /** The timestamp of the message. */
   timestamp: number;
-  /** The message to display. */
   message: string;
-  /** The origin of the message. */
   messageOrigin: 'local' | 'remote';
-  /** The sender's name. */
   name?: string;
-  /** Whether the message has been edited. */
   hasBeenEdited?: boolean;
+}
+
+// 感情タグを除去する（例: <e:happy>テキスト → テキスト）
+function removeEmotionTags(text: string): string {
+  return text.replace(/<e:\w+>/g, '').trim();
 }
 
 export const ChatEntry = ({
@@ -28,6 +29,8 @@ export const ChatEntry = ({
 }: ChatEntryProps) => {
   const time = new Date(timestamp);
   const title = time.toLocaleTimeString(locale, { timeStyle: 'full' });
+  // assistant(remote)のみ感情タグ除去。user(local)は完全raw。
+  const displayMessage = messageOrigin === 'remote' ? removeEmotionTags(message) : message;
 
   return (
     <li
@@ -50,11 +53,17 @@ export const ChatEntry = ({
       </header>
       <span
         className={cn(
-          'max-w-4/5 rounded-[20px]',
-          messageOrigin === 'local' ? 'bg-muted ml-auto p-2' : 'mr-auto'
+          'rounded-[20px] whitespace-pre-wrap break-words',
+          messageOrigin === 'local' ? 'max-w-4/5 bg-muted ml-auto p-2' : 'w-full text-justify'
         )}
       >
-        {message}
+        {messageOrigin === 'remote' ? (
+          <div className="markdown-body">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{displayMessage}</ReactMarkdown>
+          </div>
+        ) : (
+          displayMessage
+        )}
       </span>
     </li>
   );

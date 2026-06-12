@@ -2,7 +2,7 @@
 
 import { type HTMLAttributes, useCallback, useEffect, useRef, useState } from 'react';
 import { Track } from 'livekit-client';
-import { useChat, useLocalParticipant, useRemoteParticipants, useRoomContext } from '@livekit/components-react';
+import { useChat, useLocalParticipant, useRemoteParticipants } from '@livekit/components-react';
 import { ChatTextIcon, PhoneDisconnectIcon, MagnifyingGlassIcon, SpeakerSimpleXIcon, SpeakerSimpleHighIcon } from '@phosphor-icons/react/dist/ssr';
 import { TrackToggle } from '@/components/livekit/agent-control-bar/track-toggle';
 import { Button } from '@/components/livekit/button';
@@ -89,32 +89,6 @@ export function AgentControlBar({
 
   // ── Deep Search 状態管理 ─────────────────────────────────────
   const [deepSearchMode, setDeepSearchMode] = useState<DeepSearchMode>('off');
-
-  // ── Deep Search 実行中状態（agentからのstart/endを受信） ──
-  const room = useRoomContext();
-  const [deepSearchRunning, setDeepSearchRunning] = useState(false);
-  useEffect(() => {
-    if (!room) return;
-    const handleData = (payload: Uint8Array) => {
-      try {
-        const msg = JSON.parse(new TextDecoder().decode(payload));
-        if (msg.type === 'deep_search_status') {
-          if (msg.status === 'start') {
-            setDeepSearchRunning(true);
-          } else if (msg.status === 'end') {
-            setDeepSearchRunning(false);
-            // oneshot は1回実行で消費 → agent 側の自動OFF に表示を同期
-            // continuous は維持（agent 側も継続のため戻さない）
-            setDeepSearchMode((prev) => (prev === 'oneshot' ? 'off' : prev));
-          }
-        }
-      } catch {
-        // 無視
-      }
-    };
-    room.on('dataReceived', handleData);
-    return () => { room.off('dataReceived', handleData); };
-  }, [room]);
   const pressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isLongPressRef = useRef(false);
 
@@ -238,7 +212,7 @@ export function AgentControlBar({
               onPressedChange={cameraToggle.toggle}
               onMediaDeviceError={handleCameraDeviceSelectError}
               onActiveDeviceChange={handleVideoDeviceChange}
-              className="[&_button:first-child]:h-9 [&_button:first-child]:w-9 [&_button:first-child]:rounded-full [&_button:last-child]:h-9"
+              className="[&_button:first-child]:h-12 [&_button:first-child]:w-12 [&_button:first-child]:rounded-full [&_button:last-child]:h-12"
             />
           )}
 
@@ -252,7 +226,7 @@ export function AgentControlBar({
               pressed={screenShareToggle.enabled}
               disabled={screenShareToggle.pending}
               onPressedChange={screenShareToggle.toggle}
-              className="h-9 w-9 rounded-full"
+              className="h-12 w-12 rounded-full"
             />
           )}
 
@@ -267,7 +241,7 @@ export function AgentControlBar({
               setTtsMuted(!on);
               publishTtsMute(!on);
             }}
-            className="h-9 w-9 rounded-full"
+            className="h-12 w-12 rounded-full"
           >
             {ttsMuted
               ? <SpeakerSimpleXIcon weight="bold" />
@@ -290,23 +264,19 @@ export function AgentControlBar({
               isLongPressRef.current = false;
             }}
             className={cn(
-              'relative flex h-9 w-9 items-center justify-center rounded-full transition-all duration-200 select-none',
+              'relative flex h-12 w-12 items-center justify-center rounded-full transition-all duration-200 select-none',
               deepSearchMode === 'continuous' && 'bg-primary text-primary-foreground hover:bg-primary/90 ring-2 ring-primary/30',
               deepSearchMode === 'oneshot'    && 'bg-muted text-primary hover:bg-muted/80 ring-2 ring-primary/30',
-              deepSearchMode === 'off'        && 'bg-muted text-foreground hover:bg-muted/80',
+              deepSearchMode === 'off'        && 'bg-muted text-muted-foreground hover:bg-muted/80',
             )}
           >
             <MagnifyingGlassIcon
               weight="bold"
               className={cn(
-                'h-4 w-4 transition-all duration-300',
-                (deepSearchMode === 'oneshot' || deepSearchRunning) && 'animate-pulse',
+                'h-5 w-5 transition-all duration-300',
+                deepSearchMode === 'oneshot' && 'animate-pulse',
               )}
             />
-            {/* Deep Search 実行中インジケータ（agentからstart/end受信） */}
-            {deepSearchRunning && (
-              <span className="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-blue-400 animate-pulse" />
-            )}
           </button>
 
           {/* Toggle Transcript */}
@@ -316,7 +286,7 @@ export function AgentControlBar({
             aria-label="Toggle transcript"
             pressed={chatOpen}
             onPressedChange={handleToggleTranscript}
-            className="h-9 w-9 rounded-full"
+            className="h-12 w-12 rounded-full"
           >
             <ChatTextIcon weight="bold" />
           </Toggle>

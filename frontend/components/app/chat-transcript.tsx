@@ -1,8 +1,8 @@
 'use client';
 
 import { AnimatePresence, type HTMLMotionProps, motion } from 'motion/react';
-import { type ReceivedMessage } from '@livekit/components-react';
 import { ChatEntry } from '@/components/livekit/chat-entry';
+import type { HelixMessage } from '@/hooks/useHelixMessages';
 
 const MotionContainer = motion.create('div');
 const MotionChatEntry = motion.create(ChatEntry);
@@ -50,37 +50,41 @@ const MESSAGE_MOTION_PROPS = {
 
 interface ChatTranscriptProps {
   hidden?: boolean;
-  messages?: ReceivedMessage[];
+  messages?: HelixMessage[];
+  interimText?: string | null;
 }
 
 export function ChatTranscript({
   hidden = false,
   messages = [],
+  interimText = null,
   ...props
 }: ChatTranscriptProps & Omit<HTMLMotionProps<'div'>, 'ref'>) {
   return (
     <AnimatePresence>
       {!hidden && (
         <MotionContainer {...CONTAINER_MOTION_PROPS} {...props}>
-          {messages.map((receivedMessage) => {
-            const { id, timestamp, from, message } = receivedMessage;
+          {messages.map((msg) => {
             const locale = navigator?.language ?? 'en-US';
-            const messageOrigin = from?.isLocal ? 'local' : 'remote';
-            const hasBeenEdited =
-              receivedMessage.type === 'chatMessage' && !!receivedMessage.editTimestamp;
-
             return (
               <MotionChatEntry
-                key={id}
+                key={msg.id}
                 locale={locale}
-                timestamp={timestamp}
-                message={message}
-                messageOrigin={messageOrigin}
-                hasBeenEdited={hasBeenEdited}
+                timestamp={msg.ts}
+                message={msg.text}
+                messageOrigin={msg.role === 'user' ? 'local' : 'remote'}
                 {...MESSAGE_MOTION_PROPS}
               />
             );
           })}
+          {/* interim表示レイヤ: 発話中バブル（履歴には入らない・表示専用） */}
+          {interimText && (
+            <li className="flex w-full flex-col gap-0.5">
+              <span className="bg-muted/50 text-muted-foreground ml-auto max-w-4/5 rounded-[20px] p-2 italic whitespace-pre-wrap break-words">
+                {interimText}
+              </span>
+            </li>
+          )}
         </MotionContainer>
       )}
     </AnimatePresence>

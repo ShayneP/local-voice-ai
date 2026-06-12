@@ -38,35 +38,49 @@ function extractUrl(message: string): string | null {
 }
 
 /** 「覚えて」「保存して」などの保存指示キーワードを検知する */
-const SAVE_KEYWORDS = [
-  '覚えて', '覚えてて', '覚えておいて',
-  '保存して', '保存しておいて',
-  '記憶して', '記憶しておいて',
-  'save', 'remember',
-];
+const SAVE_KEYWORDS = ['覚えて', '保存して', '記憶して', '覚えておいて', '保存しておいて'];
 
 function hasSaveKeyword(message: string): boolean {
   return SAVE_KEYWORDS.some((kw) => message.includes(kw));
 }
 
+/**
+ * URL保存リクエストかどうか判定する。
+ * 「覚えて https://...」のパターンを検知する。
+ */
 function detectUrlSaveRequest(message: string): string | null {
   if (!hasSaveKeyword(message)) return null;
   return extractUrl(message);
 }
 
+/** FastAPI /rag/save-url を叩く（fire-and-forget）*/
 async function saveUrlToRag(url: string): Promise<void> {
   try {
-    const res = await fetch('/api/rag/save-url', {
+    // セッションからアクセストークンを取得
+    const sessionRes = await fetch('/api/auth/session');
+    const session = await sessionRes.json();
+    const token = session?.accessToken;
+    if (!token) {
+      console.warn('[RAG] アクセストークンが取得できませんでした');
+      return;
+    }
+
+    const res = await fetch('http://localhost:8900/rag/save-url', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
       body: JSON.stringify({ url }),
     });
+
     if (res.ok) {
       console.info(`[RAG] URL保存受付: ${url}`);
     } else {
       console.warn(`[RAG] URL保存失敗: ${res.status}`);
     }
   } catch (e) {
+    // 音声会話に影響させない
     console.warn('[RAG] URL保存エラー（無視）:', e);
   }
 }
@@ -78,36 +92,33 @@ export function ChatInput({
   isAgentAvailable = false,
   onSend = async () => {},
 }: ChatInputProps) {
-  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const [isSending, setIsSending] = useState(false);
   const [message, setMessage] = useState<string>('');
+  /** URL保存中の通知メッセージ */
   const [saveNotice, setSaveNotice] = useState<string>('');
 
-  const handleSubmit = async (e?: React.FormEvent<HTMLFormElement>) => {
-    e?.preventDefault();
-    if (!message.trim()) return;
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
     try {
       setIsSending(true);
+
+      // ── URL保存検知（送信前に判定） ──
       const urlToSave = detectUrlSaveRequest(message);
       if (urlToSave) {
+        // バックグラウンドでRAGに保存（await しない・音声に影響させない）
         saveUrlToRag(urlToSave);
         setSaveNotice(`保存中: ${urlToSave.slice(0, 40)}...`);
         setTimeout(() => setSaveNotice(''), 4000);
       }
+
+      // 通常のLiveKitチャット送信（エージェントへのメッセージとして送る）
       await onSend(message);
       setMessage('');
     } catch (error) {
       console.error(error);
     } finally {
       setIsSending(false);
-    }
-  };
-
-  // Enterで送信・Shift+Enterで改行
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSubmit();
     }
   };
 
@@ -129,19 +140,15 @@ export function ChatInput({
         onSubmit={handleSubmit}
         className="mb-3 flex grow items-end gap-2 rounded-md pl-1 text-sm"
       >
-        <textarea
+        <input
+          autoFocus
           ref={inputRef}
-          rows={3}
+          type="text"
           value={message}
           disabled={!chatOpen}
-          placeholder="メッセージを入力... (Shift+Enterで改行)"
+          placeholder="Type something..."
           onChange={(e) => setMessage(e.target.value)}
-          onKeyDown={handleKeyDown}
-          autoComplete="off"
-          autoCorrect="off"
-          autoCapitalize="off"
-          spellCheck={false}
-          className="flex-1 resize-none rounded-md p-1 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+          className="h-8 flex-1 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
         />
         <Button
           size="icon"
@@ -159,6 +166,7 @@ export function ChatInput({
         </Button>
       </form>
 
+      {/* URL保存通知（4秒で消える） */}
       {saveNotice && (
         <p className="mb-2 pl-1 text-xs text-muted-foreground">
           📎 {saveNotice}

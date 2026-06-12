@@ -32,7 +32,7 @@ const VIEW_MOTION_PROPS = {
 };
 
 interface PreConnectMessageProps {
-  messages?: ReceivedMessage[];
+  messages?: { id: string }[];
   className?: string;
 }
 
