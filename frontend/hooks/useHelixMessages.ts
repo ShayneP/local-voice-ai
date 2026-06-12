@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Room } from 'livekit-client';
 import { useTranscriptions } from '@livekit/components-react';
 
@@ -27,6 +27,9 @@ export function useHelixMessages(room?: Room): {
 } {
   const [messages, setMessages] = useState<HelixMessage[]>([]);
   const [interimText, setInterimText] = useState<string | null>(null);
+  // user確定時に表示中だったセグメントIDを記録し、同一セグメントの再表示を抑止
+  const consumedSegmentIdRef = useRef<string | null>(null);
+  const currentSegmentIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!room) return;
@@ -38,9 +41,23 @@ export function useHelixMessages(room?: Room): {
         setMessages((prev) =>
           prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]
         );
-        if (msg.role === 'user') setInterimText(null); // 確定でinterim破棄
+        if (msg.role === 'user') {
+          // 確定でinterim破棄 + 表示中セグメントを消費済みに
+          consumedSegmentIdRef.current = currentSegmentIdRef.current;
+          setInterimText(null);
+        }
       } catch (e) {
-        console.warn('helix.chat parse failed:', e);
+        console.error('helix.chat parse failed:', e);
+        // 受信失敗を画面で確認できるようsystemメッセージとして表示（調査用）
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `err_${Date.now()}`,
+            role: 'assistant',
+            text: `⚠️ メッセージ受信エラー: ${String(e)}`,
+            ts: Date.now(),
+          },
+        ]);
       }
     };
     room.registerTextStreamHandler(TOPIC, handler);
@@ -63,10 +80,13 @@ export function useHelixMessages(room?: Room): {
       .reverse()
       .find((t) => t.participantInfo?.identity === room.localParticipant?.identity);
     if (!latestLocal) return;
+    const segId = latestLocal.streamInfo?.id ?? null;
+    currentSegmentIdRef.current = segId;
+    // user確定時に表示していたセグメントは再表示しない（滞留・二重表示防止）
+    if (segId && segId === consumedSegmentIdRef.current) return;
     const isFinal =
       latestLocal.streamInfo?.attributes?.['lk.transcription_final'] === 'true';
     if (isFinal) {
-      // finalセグメントはhelix.chat側で確定表示されるため、interimは即破棄
       setInterimText(null);
     } else {
       setInterimText(latestLocal.text || null);
