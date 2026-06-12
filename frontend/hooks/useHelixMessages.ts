@@ -27,6 +27,8 @@ export function useHelixMessages(room?: Room): {
 } {
   const [messages, setMessages] = useState<HelixMessage[]>([]);
   const [interimText, setInterimText] = useState<string | null>(null);
+  // user確定(helix.chat)時点までのlk.transcriptionセグメントを再表示しないためのマーカー
+  const [consumedUntil, setConsumedUntil] = useState(0);
 
   useEffect(() => {
     if (!room) return;
@@ -38,7 +40,10 @@ export function useHelixMessages(room?: Room): {
         setMessages((prev) =>
           prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]
         );
-        if (msg.role === 'user') setInterimText(null); // 確定でinterim破棄
+        if (msg.role === 'user') {
+          setInterimText(null); // 確定でinterim破棄
+          setConsumedUntil(Date.now()); // 以降に届いた新セグメントのみinterim表示対象
+        }
       } catch (e) {
         console.warn('helix.chat parse failed:', e);
       }
@@ -62,10 +67,12 @@ export function useHelixMessages(room?: Room): {
     const latestLocal = [...transcriptions]
       .reverse()
       .find((t) => t.participantInfo?.identity === room.localParticipant?.identity);
-    if (latestLocal) {
-      setInterimText(latestLocal.text || null);
-    }
-  }, [transcriptions, room]);
+    if (!latestLocal) return;
+    const ts = latestLocal.streamInfo?.timestamp ?? 0;
+    // 確定(consumedUntil)より古いセグメントは再表示しない（滞留防止）
+    if (ts <= consumedUntil) return;
+    setInterimText(latestLocal.text || null);
+  }, [transcriptions, room, consumedUntil]);
 
   return { messages, interimText };
 }

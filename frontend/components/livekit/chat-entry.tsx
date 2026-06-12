@@ -1,6 +1,7 @@
 import * as React from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkBreaks from 'remark-breaks';
 import { cn } from '@/lib/utils';
 
 export interface ChatEntryProps extends React.HTMLAttributes<HTMLLIElement> {
@@ -59,7 +60,7 @@ export const ChatEntry = ({
       >
         {messageOrigin === 'remote' ? (
           <div className="markdown-body">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{displayMessage}</ReactMarkdown>
+            <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>{displayMessage}</ReactMarkdown>
           </div>
         ) : (
           displayMessage
