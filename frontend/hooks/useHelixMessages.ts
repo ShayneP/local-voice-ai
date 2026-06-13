@@ -14,6 +14,10 @@ export interface HelixMessage {
 }
 
 const TOPIC = 'helix.chat';
+// interim(発話中テキスト)はデフォルト非表示。URLに ?debug=1 を付けた場合のみ表示。
+const SHOW_INTERIM = () =>
+  typeof window !== 'undefined' &&
+  new URLSearchParams(window.location.search).get('debug') === '1';
 
 /**
  * 統一メッセージストリーム(helix.chat)の購読。
@@ -125,5 +129,5 @@ export function useHelixMessages(room?: Room): {
     }
   }, [transcriptions, room]);
 
-  return { messages, interimText };
+  return { messages, interimText: SHOW_INTERIM() ? interimText : null };
 }
