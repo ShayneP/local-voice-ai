@@ -48,16 +48,21 @@ const MESSAGE_MOTION_PROPS = {
   },
 };
 
+export interface StatusIndicator {
+  emoji: string;
+  text: string;
+}
+
 interface ChatTranscriptProps {
   hidden?: boolean;
   messages?: HelixMessage[];
-  interimText?: string | null;
+  status?: StatusIndicator | null;
 }
 
 export function ChatTranscript({
   hidden = false,
   messages = [],
-  interimText = null,
+  status = null,
   ...props
 }: ChatTranscriptProps & Omit<HTMLMotionProps<'div'>, 'ref'>) {
   return (
@@ -77,14 +82,22 @@ export function ChatTranscript({
               />
             );
           })}
-          {/* interim表示レイヤ: 発話中バブル（履歴には入らない・表示専用） */}
-          {interimText && (
-            <li className="flex w-full flex-col gap-0.5">
-              <span className="bg-muted/50 text-muted-foreground ml-auto max-w-4/5 rounded-[20px] p-2 italic whitespace-pre-wrap break-words">
-                {interimText}
-              </span>
-            </li>
-          )}
+          {/* 状態インジケータ（エフェメラル・履歴に残さない） */}
+          <AnimatePresence>
+            {status && (
+              <motion.div
+                key="status-indicator"
+                initial={{ opacity: 0, translateY: 6 }}
+                animate={{ opacity: 1, translateY: 0 }}
+                exit={{ opacity: 0, translateY: 6 }}
+                transition={{ duration: 0.2 }}
+                className="flex items-center gap-1.5 px-1 py-1.5"
+              >
+                <span className="text-sm">{status.emoji}</span>
+                <span className="text-muted-foreground text-xs">{status.text}</span>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </MotionContainer>
       )}
     </AnimatePresence>

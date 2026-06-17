@@ -1,8 +1,7 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Room } from 'livekit-client';
-import { useTranscriptions } from '@livekit/components-react';
 
 export interface HelixMessage {
   id: string;
@@ -11,33 +10,30 @@ export interface HelixMessage {
   ts: number;
   part?: number; // 分割送信時のパート番号
   parts?: number; // 総パート数
+  kind?: 'delta' | 'final';
+  seq?: number; // delta連番
+  finalized?: boolean; // finalで確定済み
 }
 
 const TOPIC = 'helix.chat';
-// interim(発話中テキスト)はデフォルト非表示。URLに ?debug=1 を付けた場合のみ表示。
-const SHOW_INTERIM = () =>
-  typeof window !== 'undefined' &&
-  new URLSearchParams(window.location.search).get('debug') === '1';
 
 /**
  * 統一メッセージストリーム(helix.chat)の購読。
- * agent側がuser/assistant両方を確定テキストとしてJSON送信するため、
- * frontendはマージ・置換なしのappend-onlyで保持する。
- *
- * interimText: lk.transcription のローカル参加者セグメント（表示専用レイヤ）。
- * helix.chat でuser確定メッセージが届いたらクリアされる。履歴には入らない。
+ * assistantは同一msg_idでdelta(差分逐次)→final(確定全文置換)を受信する。
+ * deltaはseq順に結合してidベースupsert、finalは800B分割を再結合して全文置換する。
+ * userはfinalのみ表示。interim/transcription表示は廃止済み。
  */
 export function useHelixMessages(room?: Room): {
   messages: HelixMessage[];
-  interimText: string | null;
+  streaming: boolean; // delta受信中（未finalized assistant有り）
 } {
   const [messages, setMessages] = useState<HelixMessage[]>([]);
-  const [interimText, setInterimText] = useState<string | null>(null);
-  // user確定時に表示中だったセグメントIDを記録し、同一セグメントの再表示を抑止
-  const consumedSegmentIdRef = useRef<string | null>(null);
-  const currentSegmentIdRef = useRef<string | null>(null);
+  const [streaming, setStreaming] = useState(false);
   const partsBufRef = useRef<Map<string, Map<number, string>>>(new Map());
-  const lastConfirmedUserTextRef = useRef<string | null>(null);
+  // delta結合用: id -> (seq -> text)。seq順に連結して逐次表示する。
+  const deltaBufRef = useRef<Map<string, Map<number, string>>>(new Map());
+  // final確定済みid。delta遅延到着を同期判定で弾き、deltaBufのリークを防ぐ。
+  const finalizedIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (!room) return;
@@ -58,29 +54,56 @@ export function useHelixMessages(room?: Room): {
         setMessages((prev) => prev.filter((m) => m.id !== dbgId));
         const msg = JSON.parse(raw) as HelixMessage;
         if (!msg.id || !msg.role || typeof msg.text !== 'string') return;
-        // 分割メッセージの再結合（agentが800バイト単位で分割送信する）
+
+        // ── delta(差分逐次): seq順に結合してidベースupsert ──
+        if (msg.kind === 'delta') {
+          // A: final確定済みなら結合もbuf生成も再描画も行わない（リーク防止）
+          if (finalizedIdsRef.current.has(msg.id)) return;
+          const buf = deltaBufRef.current.get(msg.id) ?? new Map<number, string>();
+          buf.set(msg.seq ?? 0, msg.text);
+          deltaBufRef.current.set(msg.id, buf);
+          const maxSeq = Math.max(...buf.keys());
+          const joined = Array.from({ length: maxSeq + 1 }, (_, i) => buf.get(i) ?? '').join('');
+          setMessages((prev) => {
+            const idx = prev.findIndex((m) => m.id === msg.id);
+            if (idx === -1) {
+              return [...prev, { id: msg.id, role: msg.role, text: joined, ts: msg.ts, finalized: false }];
+            }
+            // final確定後はdeltaを無視（順序逆転対策）
+            if (prev[idx].finalized) return prev;
+            const next = prev.slice();
+            next[idx] = { ...next[idx], text: joined };
+            return next;
+          });
+          setStreaming(true);
+          return;
+        }
+
+        // ── final(確定): 800B分割を再結合して全文置換 ──
         const totalParts = msg.parts ?? 1;
+        let finalText = msg.text;
         if (totalParts > 1) {
           const buf = partsBufRef.current.get(msg.id) ?? new Map<number, string>();
           buf.set(msg.part ?? 0, msg.text);
           partsBufRef.current.set(msg.id, buf);
           if (buf.size < totalParts) return; // 全パート未着
-          const joined = Array.from({ length: totalParts }, (_, i) => buf.get(i) ?? '').join('');
+          finalText = Array.from({ length: totalParts }, (_, i) => buf.get(i) ?? '').join('');
           partsBufRef.current.delete(msg.id);
-          msg.text = joined;
         }
-        setMessages((prev) =>
-          prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]
-        );
-        if (msg.role === 'user') {
-          // 確定でinterim破棄 + 表示中セグメントを消費済みに
-          consumedSegmentIdRef.current = currentSegmentIdRef.current;
-          lastConfirmedUserTextRef.current = msg.text;
-          setInterimText(null);
-        }
+        finalizedIdsRef.current.add(msg.id);
+        deltaBufRef.current.delete(msg.id);
+        setStreaming(false);
+        setMessages((prev) => {
+          const idx = prev.findIndex((m) => m.id === msg.id);
+          if (idx === -1) {
+            return [...prev, { id: msg.id, role: msg.role, text: finalText, ts: msg.ts, finalized: true }];
+          }
+          const next = prev.slice();
+          next[idx] = { ...next[idx], text: finalText, finalized: true };
+          return next;
+        });
       } catch (e) {
         console.error('helix.chat parse failed:', e);
-        // 受信失敗を画面で確認できるようsystemメッセージとして表示（調査用）
         setMessages((prev) => [
           ...prev,
           {
@@ -102,32 +125,5 @@ export function useHelixMessages(room?: Room): {
     };
   }, [room]);
 
-  // ── interim表示レイヤ（lk.transcription / ローカル参加者のみ・表示専用）──
-  const transcriptionOptions = useMemo(() => ({ room }), [room]);
-  const transcriptions = useTranscriptions(transcriptionOptions as any);
-
-  useEffect(() => {
-    if (!room) return;
-    const latestLocal = [...transcriptions]
-      .reverse()
-      .find((t) => t.participantInfo?.identity === room.localParticipant?.identity);
-    if (!latestLocal) return;
-    const attrs = latestLocal.streamInfo?.attributes ?? {};
-    const segKey = attrs['lk.segment_id'] ?? latestLocal.streamInfo?.id ?? null;
-    currentSegmentIdRef.current = segKey;
-    // user確定時に表示していたセグメント(発話)は再表示しない（滞留・二重表示防止）
-    if (segKey && segKey === consumedSegmentIdRef.current) return;
-    const isFinal = attrs['lk.transcription_final'] === 'true';
-    // 属性が無い環境向けフォールバック: 確定済みuserメッセージと同一テキストは破棄
-    const matchesConfirmed =
-      lastConfirmedUserTextRef.current !== null &&
-      (latestLocal.text || '').trim() === lastConfirmedUserTextRef.current.trim();
-    if (isFinal || matchesConfirmed) {
-      setInterimText(null);
-    } else {
-      setInterimText(latestLocal.text || null);
-    }
-  }, [transcriptions, room]);
-
-  return { messages, interimText: SHOW_INTERIM() ? interimText : null };
+  return { messages, streaming };
 }

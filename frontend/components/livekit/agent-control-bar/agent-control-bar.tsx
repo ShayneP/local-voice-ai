@@ -53,7 +53,7 @@ export function AgentControlBar({
   const [chatOpen, setChatOpen] = useState(false);
 
   // ── TTSミュート状態管理 ─────────────────────────────────────
-  const [ttsMuted, setTtsMuted] = useState(true); // デフォルトはミュートON（音声OFF）
+  const [ttsMuted, setTtsMuted] = useState(false); // デフォルトはミュートOFF（音声ON）
 
   const publishTtsMute = useCallback(async (muted: boolean) => {
     try {

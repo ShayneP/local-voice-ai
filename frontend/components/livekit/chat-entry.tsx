@@ -54,8 +54,8 @@ export const ChatEntry = ({
       </header>
       <span
         className={cn(
-          'rounded-[20px] whitespace-pre-wrap break-words',
-          messageOrigin === 'local' ? 'max-w-4/5 bg-muted ml-auto p-2 whitespace-pre-wrap break-words' : 'w-full text-left'
+          'rounded-[20px] break-words',
+          messageOrigin === 'local' ? 'max-w-4/5 bg-muted ml-auto p-2 whitespace-pre-wrap' : 'w-full text-left'
         )}
       >
         {messageOrigin === 'remote' ? (

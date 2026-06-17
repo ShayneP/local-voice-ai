@@ -169,7 +169,7 @@
 }
 .helix-prose > *:first-child { margin-top: 0; }
 .helix-prose > *:last-child { margin-bottom: 0; }
-.helix-prose p { margin: 0 0 0.9em; }
+.helix-prose p { margin: 0 0 0.4em; }
 .helix-prose h1,
 .helix-prose h2,
 .helix-prose h3 { font-weight: 700; line-height: 1.4; margin: 1.2em 0 0.5em; }

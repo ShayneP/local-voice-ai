@@ -1,10 +1,11 @@
 'use client';
 import React, { useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
-import { useSessionContext } from '@livekit/components-react';
+import { useSessionContext, useLocalParticipant, useIsSpeaking, useVoiceAssistant } from '@livekit/components-react';
+
 import { useHelixMessages } from '@/hooks/useHelixMessages';
 import type { AppConfig } from '@/app-config';
-import { ChatTranscript } from '@/components/app/chat-transcript';
+import { ChatTranscript, type StatusIndicator } from '@/components/app/chat-transcript';
 import { PreConnectMessage } from '@/components/app/preconnect-message';
 import { TileLayout } from '@/components/app/tile-layout';
 import {
@@ -56,6 +57,11 @@ export function Fade({ top = false, bottom = false, className }: FadeProps) {
   );
 }
 
+// ── 状態インジケータ定義 ──
+const STATUS_LISTENING: StatusIndicator = { emoji: '🎤', text: '聞いています…' };
+const STATUS_SEARCHING: StatusIndicator = { emoji: '🔍', text: '検索しています…' };
+const STATUS_THINKING: StatusIndicator = { emoji: '💭', text: '回答を考えています…' };
+
 interface SessionViewProps {
   appConfig: AppConfig;
 }
@@ -65,7 +71,11 @@ export const SessionView = ({
   ...props
 }: React.ComponentProps<'section'> & SessionViewProps) => {
   const session = useSessionContext();
-  const { messages, interimText } = useHelixMessages(session?.room);
+  const { messages, streaming } = useHelixMessages(session?.room);
+  const { localParticipant } = useLocalParticipant();
+  const isSpeaking = useIsSpeaking(localParticipant);
+  const { state: agentState } = useVoiceAssistant();
+  const [deepSearching, setDeepSearching] = useState(false);
   const [chatOpen, setChatOpen] = useState(true);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
@@ -77,19 +87,65 @@ export const SessionView = ({
     screenShare: appConfig.supportsVideoInput,
   };
 
+  // Deep Search status 購読（DataChannel経由）
+  // 初回受信した Agent identity を記録し、以降は完全一致で判定する。
+  // 将来複数参加者が同一Roomに入った場合にも誤判定しない。
+  const myAgentIdentityRef = useRef<string | null>(null);
+  useEffect(() => {
+    const room = session?.room;
+    if (!room) return;
+    const handler = (payload: Uint8Array, participant: any, _kind: any) => {
+      try {
+        const data = JSON.parse(new TextDecoder().decode(payload));
+        if (data.type !== 'deep_search_status') return;
+        const senderIdentity: string = participant?.identity ?? '';
+        // 初回: Agent種別の参加者からの deep_search_status のみ identity を記録
+        // participant.kind === 4 (AGENT) で限定し、将来別DataChannel送信元が増えても誤学習を防ぐ
+        if (!myAgentIdentityRef.current && senderIdentity && participant?.kind === 4) {
+          myAgentIdentityRef.current = senderIdentity;
+        }
+        // 2回目以降: 記録済み identity と完全一致のみ受け付ける
+        if (myAgentIdentityRef.current && senderIdentity !== myAgentIdentityRef.current) {
+          return;
+        }
+        setDeepSearching(data.status === 'start');
+      } catch { /* ignore non-JSON */ }
+    };
+    room.on('dataReceived', handler);
+    return () => { room.off('dataReceived', handler); };
+  }, [session?.room]);
+
+
+  // 状態インジケータの優先度決定
+  // isSpeaking > deepSearch > thinking（delta受信中はthinking非表示）
+  const statusIndicator: StatusIndicator | null = (() => {
+    if (isSpeaking) return STATUS_LISTENING;
+    if (deepSearching) return STATUS_SEARCHING;
+    if (agentState === 'thinking' && !streaming) return STATUS_THINKING;
+    return null;
+  })();
+
   // 新しいメッセージが来たら最下部へスクロール
-  // ユーザーが上にスクロールして読んでいる場合は邪魔しない
   useEffect(() => {
     const el = scrollAreaRef.current;
     if (!el) return;
     const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
     const lastMessage = messages.at(-1);
     const lastMessageIsLocal = lastMessage?.role === 'user';
-    // 自分のメッセージ送信時 or 最下部付近なら自動スクロール
     if (lastMessageIsLocal || isNearBottom) {
       el.scrollTop = el.scrollHeight;
     }
   }, [messages]);
+
+  // インジケータ変化時も自動スクロール（末尾付近のときのみ）
+  useEffect(() => {
+    const el = scrollAreaRef.current;
+    if (!el || !statusIndicator) return;
+    const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
+    if (isNearBottom) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [statusIndicator]);
 
   return (
     <section className="bg-background relative z-10 h-full w-full overflow-hidden" {...props}>
@@ -100,19 +156,19 @@ export const SessionView = ({
           !chatOpen && 'pointer-events-none'
         )}
       >
-        <Fade top className="absolute inset-x-4 top-0 h-40" />
-        <ScrollArea ref={scrollAreaRef} className="px-4 pt-40 pb-[220px] md:px-6 md:pb-[260px]">
+        <Fade top className="absolute inset-x-4 top-0 h-16" />
+        <ScrollArea ref={scrollAreaRef} className="px-4 pt-16 pb-[220px] md:px-6 md:pb-[260px]">
           <ChatTranscript
             hidden={!chatOpen}
             messages={messages}
-            interimText={interimText}
+            status={statusIndicator}
             className="mx-auto max-w-2xl space-y-3 transition-opacity duration-300 ease-out"
           />
         </ScrollArea>
       </div>
 
-      {/* Tile Layout */}
-      <TileLayout chatOpen={chatOpen} />
+      {/* Tile Layout — チャット中心UIのため chatOpen 時は非表示 */}
+      {!chatOpen && <TileLayout chatOpen={chatOpen} />}
 
       {/* Bottom */}
       <MotionBottom
