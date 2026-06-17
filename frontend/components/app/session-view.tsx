@@ -1,8 +1,9 @@
 'use client';
-
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
-import { useSessionContext } from '@livekit/components-react';
+import { useSessionContext, useLocalParticipant, useIsSpeaking, useVoiceAssistant } from '@livekit/components-react';
+
+import { useHelixMessages } from '@/hooks/useHelixMessages';
 import type { AppConfig } from '@/app-config';
 import { ChatTranscript, type StatusIndicator } from '@/components/app/chat-transcript';
 import { PreConnectMessage } from '@/components/app/preconnect-message';
@@ -13,7 +14,6 @@ import {
 } from '@/components/livekit/agent-control-bar/agent-control-bar';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '../livekit/scroll-area/scroll-area';
-import { useHelixMessages } from '@/hooks/useHelixMessages';
 
 const MotionBottom = motion.create('div');
 
@@ -34,7 +34,7 @@ const BOTTOM_VIEW_MOTION_PROPS = {
   transition: {
     duration: 0.3,
     delay: 0.5,
-    ease: 'easeOut',
+    ease: 'easeOut' as const,
   },
 };
 
@@ -58,10 +58,9 @@ export function Fade({ top = false, bottom = false, className }: FadeProps) {
 }
 
 // ── 状態インジケータ定義 ──
-type AgentStatusState = 'thinking' | 'speaking' | null;
+const STATUS_LISTENING: StatusIndicator = { emoji: '🎤', text: '聞いています…' };
+const STATUS_SEARCHING: StatusIndicator = { emoji: '🔍', text: '検索しています…' };
 const STATUS_THINKING: StatusIndicator = { emoji: '💭', text: '回答を考えています…' };
-const STATUS_LISTENING: StatusIndicator = { emoji: '👂', text: '聞いています…' };
-const STATUS_SEARCHING: StatusIndicator = { emoji: '🔍', text: '検索中です…' };
 
 interface SessionViewProps {
   appConfig: AppConfig;
@@ -73,10 +72,11 @@ export const SessionView = ({
 }: React.ComponentProps<'section'> & SessionViewProps) => {
   const session = useSessionContext();
   const { messages, streaming } = useHelixMessages(session?.room);
-  const [chatOpen, setChatOpen] = useState(true);
-  const [agentState, setAgentState] = useState<AgentStatusState>(null);
-  const [isSpeaking, setIsSpeaking] = useState(false);
+  const { localParticipant } = useLocalParticipant();
+  const isSpeaking = useIsSpeaking(localParticipant);
+  const { state: agentState } = useVoiceAssistant();
   const [deepSearching, setDeepSearching] = useState(false);
+  const [chatOpen, setChatOpen] = useState(true);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
   const controls: ControlBarControls = {
@@ -88,26 +88,33 @@ export const SessionView = ({
   };
 
   // Deep Search status 購読（DataChannel経由）
+  // 初回受信した Agent identity を記録し、以降は完全一致で判定する。
+  // 将来複数参加者が同一Roomに入った場合にも誤判定しない。
   const myAgentIdentityRef = useRef<string | null>(null);
   useEffect(() => {
     const room = session?.room;
     if (!room) return;
-    const handler = (payload: Uint8Array, participant: any) => {
+    const handler = (payload: Uint8Array, participant: any, _kind: any) => {
       try {
         const data = JSON.parse(new TextDecoder().decode(payload));
         if (data.type !== 'deep_search_status') return;
-        const identity = participant?.identity;
-        if (!myAgentIdentityRef.current) {
-          if (!identity || identity.startsWith('user_')) return;
-          myAgentIdentityRef.current = identity;
+        const senderIdentity: string = participant?.identity ?? '';
+        // 初回: Agent種別の参加者からの deep_search_status のみ identity を記録
+        // participant.kind === 4 (AGENT) で限定し、将来別DataChannel送信元が増えても誤学習を防ぐ
+        if (!myAgentIdentityRef.current && senderIdentity && participant?.kind === 4) {
+          myAgentIdentityRef.current = senderIdentity;
         }
-        if (identity !== myAgentIdentityRef.current) return;
+        // 2回目以降: 記録済み identity と完全一致のみ受け付ける
+        if (myAgentIdentityRef.current && senderIdentity !== myAgentIdentityRef.current) {
+          return;
+        }
         setDeepSearching(data.status === 'start');
-      } catch { /* ignore */ }
+      } catch { /* ignore non-JSON */ }
     };
     room.on('dataReceived', handler);
     return () => { room.off('dataReceived', handler); };
   }, [session?.room]);
+
 
   // 状態インジケータの優先度決定
   // isSpeaking > deepSearch > thinking（delta受信中はthinking非表示）
@@ -149,7 +156,7 @@ export const SessionView = ({
           !chatOpen && 'pointer-events-none'
         )}
       >
-        <Fade top className="absolute inset-x-4 top-0 h-40" />
+        <Fade top className="absolute inset-x-4 top-0 h-16" />
         <ScrollArea ref={scrollAreaRef} className="px-4 pt-16 pb-[220px] md:px-6 md:pb-[260px]">
           <ChatTranscript
             hidden={!chatOpen}
@@ -157,20 +164,20 @@ export const SessionView = ({
             status={statusIndicator}
             className="mx-auto max-w-2xl space-y-3 transition-opacity duration-300 ease-out"
           />
-          {appConfig.isPreConnectBufferEnabled && (
-            <PreConnectMessage messages={messages} className="pb-4" />
-          )}
         </ScrollArea>
       </div>
 
-      {/* Tile Layout */}
-      <TileLayout chatOpen={chatOpen} />
+      {/* Tile Layout — チャット中心UIのため chatOpen 時は非表示 */}
+      {!chatOpen && <TileLayout chatOpen={chatOpen} />}
 
       {/* Bottom */}
       <MotionBottom
         {...BOTTOM_VIEW_MOTION_PROPS}
         className="fixed inset-x-3 bottom-0 z-50 md:inset-x-12"
       >
+        {appConfig.isPreConnectBufferEnabled && (
+          <PreConnectMessage messages={messages} className="pb-4" />
+        )}
         <div className="bg-background relative mx-auto max-w-2xl pb-3 md:pb-12">
           <Fade bottom className="absolute inset-x-0 top-0 h-4 -translate-y-full" />
           <AgentControlBar

@@ -159,3 +159,49 @@
     }
   }
 }
+
+/* ── helix.chat assistant表示: llama-ui相当のprose整形 ── */
+.helix-prose {
+  line-height: 1.75;
+  font-size: 0.95rem;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+.helix-prose > *:first-child { margin-top: 0; }
+.helix-prose > *:last-child { margin-bottom: 0; }
+.helix-prose p { margin: 0 0 0.4em; }
+.helix-prose h1,
+.helix-prose h2,
+.helix-prose h3 { font-weight: 700; line-height: 1.4; margin: 1.2em 0 0.5em; }
+.helix-prose h1 { font-size: 1.3em; }
+.helix-prose h2 { font-size: 1.18em; }
+.helix-prose h3 { font-size: 1.06em; }
+.helix-prose ul,
+.helix-prose ol { margin: 0.5em 0 0.9em; padding-left: 1.4em; }
+.helix-prose li { margin: 0.25em 0; }
+.helix-prose li > p { margin: 0; }
+.helix-prose strong { font-weight: 700; }
+.helix-prose code {
+  font-size: 0.88em;
+  padding: 0.1em 0.35em;
+  border-radius: 0.3em;
+  background: color-mix(in srgb, currentColor 10%, transparent);
+}
+.helix-prose pre {
+  margin: 0.8em 0;
+  padding: 0.8em 1em;
+  border-radius: 0.6em;
+  overflow-x: auto;
+  background: color-mix(in srgb, currentColor 8%, transparent);
+}
+.helix-prose pre code { padding: 0; background: none; }
+.helix-prose blockquote {
+  margin: 0.8em 0;
+  padding-left: 1em;
+  border-left: 3px solid color-mix(in srgb, currentColor 25%, transparent);
+  opacity: 0.85;
+}
+.helix-prose hr { margin: 1.2em 0; border: none; border-top: 1px solid color-mix(in srgb, currentColor 15%, transparent); }
+.helix-prose table { border-collapse: collapse; margin: 0.8em 0; }
+.helix-prose th,
+.helix-prose td { border: 1px solid color-mix(in srgb, currentColor 20%, transparent); padding: 0.4em 0.7em; }
