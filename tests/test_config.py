@@ -94,6 +94,33 @@ class TestManageOverride:
         assert cfg.manage_tts is expected
 
 
+class TestLlamaOffline:
+    """LLAMA_OFFLINE is tri-state: unset → None (auto-detect at spec build),
+    otherwise an explicit bool that wins over auto-detection."""
+
+    def test_unset_means_auto(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("LLAMA_OFFLINE", raising=False)
+        assert Config.from_env().llama_offline is None
+
+    @pytest.mark.parametrize("raw,expected", [
+        ("1", True), ("true", True), ("YES", True),
+        ("0", False), ("false", False), ("no", False),
+    ])
+    def test_explicit_value(
+        self, raw: str, expected: bool, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("LLAMA_OFFLINE", raw)
+        assert Config.from_env().llama_offline is expected
+
+    def test_model_path_default_empty(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("LLAMA_MODEL_PATH", raising=False)
+        assert Config.from_env().llama_model_path == ""
+
+    def test_model_path_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("LLAMA_MODEL_PATH", "/models/foo.gguf")
+        assert Config.from_env().llama_model_path == "/models/foo.gguf"
+
+
 class TestSttProviderDefaults:
     def test_nemotron_default_model(self) -> None:
         cfg = Config.from_env()

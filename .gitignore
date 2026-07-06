@@ -1,6 +1,10 @@
 venv/
+.venv/
 inference/llama/models/
 
 # Python cache artifacts
 **/__pycache__/
 *.pyc
+
+# Packaging metadata from editable installs (pip install -e / uv sync)
+*.egg-info/

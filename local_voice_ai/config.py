@@ -24,6 +24,15 @@ def _env_bool(name: str, default: bool) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _env_bool_opt(name: str) -> Optional[bool]:
+    """Like ``_env_bool`` but returns ``None`` when the var is unset, so callers
+    can distinguish "not configured" (auto) from an explicit true/false."""
+    raw = os.getenv(name)
+    if raw is None:
+        return None
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _is_loopback(url: str) -> bool:
     """Return True if ``url`` points at the local machine."""
     try:
@@ -59,6 +68,15 @@ class Config:
     llama_model: str = "qwen3-4b"
     llama_api_key: str = "no-key-needed"
     llama_hf_repo: str = "unsloth/Qwen3-4B-Instruct-2507-GGUF"
+    # Path to a local .gguf. When set, llama-server loads it directly with -m
+    # instead of resolving --hf-repo against Hugging Face (works fully offline).
+    llama_model_path: str = ""
+    # Pass --offline to llama-server: use only cached files, never hit the
+    # network. Lets a previously-downloaded --hf-repo model start with no
+    # internet. ``None`` (the default) means auto: enable --offline when the
+    # model is already cached, otherwise allow the first-run download.
+    # See https://github.com/ShayneP/local-voice-ai/issues/9
+    llama_offline: Optional[bool] = None
     llama_model_alias: str = "qwen3-4b"
     llama_ctx_size: int = 16384
     llama_n_gpu_layers: int = 0
@@ -135,6 +153,8 @@ class Config:
             llama_model=os.getenv("LLAMA_MODEL", cls.llama_model),
             llama_api_key=os.getenv("LLAMA_API_KEY", cls.llama_api_key),
             llama_hf_repo=os.getenv("LLAMA_HF_REPO", cls.llama_hf_repo),
+            llama_model_path=os.getenv("LLAMA_MODEL_PATH", cls.llama_model_path),
+            llama_offline=_env_bool_opt("LLAMA_OFFLINE"),
             llama_model_alias=os.getenv("LLAMA_MODEL_ALIAS", cls.llama_model_alias),
             llama_ctx_size=int(os.getenv("LLAMA_CTX_SIZE", str(cls.llama_ctx_size))),
             llama_n_gpu_layers=int(os.getenv("LLAMA_N_GPU_LAYERS", str(cls.llama_n_gpu_layers))),

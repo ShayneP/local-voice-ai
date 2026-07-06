@@ -15,6 +15,7 @@ import asyncio
 import logging
 import os
 import sys
+from pathlib import Path
 from typing import Optional
 
 import uvicorn
@@ -24,6 +25,36 @@ from .config import Config
 from .supervisor import ChildSpec, Supervisor, configure_logging
 
 logger = logging.getLogger("main")
+
+
+def _llama_cache_dir(env: dict[str, str]) -> Path:
+    """The directory llama-server uses for --hf-repo downloads, mirroring its
+    fs_get_cache_directory() precedence given the env we pass the child."""
+    if env.get("LLAMA_CACHE"):
+        return Path(env["LLAMA_CACHE"])
+    if env.get("XDG_CACHE_HOME"):
+        return Path(env["XDG_CACHE_HOME"]) / "llama.cpp"
+    return Path.home() / ".cache" / "llama.cpp"
+
+
+def _llama_repo_cached(repo: str, env: dict[str, str]) -> bool:
+    """Best-effort check for whether a --hf-repo model is already downloaded, so
+    we can start --offline automatically after the first successful run.
+
+    Mirrors llama.cpp's on-disk cache naming (``manifest=<org>=<repo>=<tag>.json``
+    plus ``<org>_<repo>_<file>.gguf``). Intentionally conservative: a false miss
+    just means we don't add --offline (unchanged network path), while we only
+    claim "cached" for this exact repo so a newly-changed repo still downloads.
+    """
+    cache = _llama_cache_dir(env)
+    if not cache.is_dir():
+        return False
+    spec, tag = (repo.rsplit(":", 1) + ["latest"])[:2]
+    manifest = cache / f"manifest={spec.replace('/', '=')}={tag}.json"
+    if manifest.is_file():
+        return True
+    prefix = spec.replace("/", "_")
+    return any(p.suffix == ".gguf" for p in cache.glob(f"{prefix}*.gguf"))
 
 
 def _build_specs(cfg: Config) -> list[ChildSpec]:
@@ -60,6 +91,28 @@ def _build_specs(cfg: Config) -> list[ChildSpec]:
     # --- llama.cpp server (C++ binary) -------------------------------
     if cfg.manage_llama:
         llama_bin = os.getenv("LLAMA_BIN", "llama-server")
+        llama_env = {
+            "HF_HOME": os.getenv("HF_HOME", "/models"),
+            "XDG_CACHE_HOME": os.getenv("XDG_CACHE_HOME", "/models"),
+        }
+        # A local .gguf path loads directly (no Hugging Face lookup); otherwise
+        # resolve from the HF repo. --offline forces cache-only startup so a
+        # previously-downloaded model runs with no network. (issue #9)
+        if cfg.llama_model_path:
+            model_argv = ["-m", cfg.llama_model_path]
+        else:
+            model_argv = ["--hf-repo", cfg.llama_hf_repo]
+        # LLAMA_OFFLINE, when set, wins; otherwise auto-enable --offline once the
+        # model is cached so restarts work with no internet, while the first run
+        # is still free to download.
+        if cfg.llama_offline is not None:
+            offline = cfg.llama_offline
+        elif cfg.llama_model_path:
+            offline = False  # -m needs no network regardless
+        else:
+            offline = _llama_repo_cached(cfg.llama_hf_repo, llama_env)
+            if offline:
+                logger.info("llama: %s found in cache; starting --offline", cfg.llama_hf_repo)
         specs.append(
             ChildSpec(
                 name="llama",
@@ -67,12 +120,13 @@ def _build_specs(cfg: Config) -> list[ChildSpec]:
                     llama_bin,
                     "--host", "127.0.0.1",
                     "--port", str(cfg.llama_bind_port),
-                    "--hf-repo", cfg.llama_hf_repo,
+                    *model_argv,
+                    *(["--offline"] if offline else []),
                     "--alias", cfg.llama_model_alias,
                     "--ctx-size", str(cfg.llama_ctx_size),
                     "--n-gpu-layers", str(cfg.llama_n_gpu_layers),
                 ],
-                env={"HF_HOME": os.getenv("HF_HOME", "/models"), "XDG_CACHE_HOME": os.getenv("XDG_CACHE_HOME", "/models")},
+                env=llama_env,
                 ready_url=f"http://127.0.0.1:{cfg.llama_bind_port}/v1/models",
                 ready_timeout=900.0,  # first-run model download can be slow
             )
