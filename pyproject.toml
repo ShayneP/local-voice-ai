@@ -37,9 +37,11 @@ ml = [
     "kokoro>=0.9",
     "huggingface_hub",
 ]
-# Whisper fallback (vox-box) — only when STT_PROVIDER=whisper.
+# Whisper fallback (faster-whisper) — only when STT_PROVIDER=whisper.
+# (vox-box was unusable here: it pins aiofiles==23.2.1, which conflicts with
+# livekit-agents, so the extra could never install alongside [ml].)
 whisper = [
-    "vox-box",
+    "faster-whisper>=1.0",
 ]
 dev = [
     "pytest",

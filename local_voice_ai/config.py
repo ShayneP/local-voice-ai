@@ -95,9 +95,8 @@ class Config:
     nemotron_model_name: str = "nvidia/nemotron-speech-streaming-en-0.6b"
     nemotron_model_id: str = "nemotron-speech-streaming"
 
-    # Whisper (vox-box) specific
-    voxbox_hf_repo_id: str = "Systran/faster-whisper-small"
-    voxbox_device: str = "cpu"
+    # Whisper (faster-whisper) specific
+    whisper_model: str = "Systran/faster-whisper-small"
 
     # --- TTS (Kokoro) ---------------------------------------------------
     tts_base_url: str = "http://127.0.0.1:8880/v1"
@@ -169,8 +168,7 @@ class Config:
             manage_stt=_env_bool("MANAGE_STT", _is_loopback(stt_base_url)),
             nemotron_model_name=os.getenv("NEMOTRON_MODEL_NAME", cls.nemotron_model_name),
             nemotron_model_id=os.getenv("NEMOTRON_MODEL_ID", cls.nemotron_model_id),
-            voxbox_hf_repo_id=os.getenv("VOXBOX_HF_REPO_ID", cls.voxbox_hf_repo_id),
-            voxbox_device=os.getenv("VOXBOX_DEVICE", cls.voxbox_device),
+            whisper_model=os.getenv("WHISPER_MODEL", cls.whisper_model),
             #
             tts_base_url=tts_base_url,
             tts_voice=os.getenv("TTS_VOICE", cls.tts_voice),

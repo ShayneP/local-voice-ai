@@ -73,6 +73,24 @@ class TestSpawnAndReady:
             await sup.shutdown(timeout=3.0)
 
     @pytest.mark.asyncio
+    async def test_status_reflects_readiness(self) -> None:
+        port = _free_port()
+        sup = Supervisor([_http_child("a", port)])
+
+        # Before spawn: not running, not ready — the first-boot UI's view.
+        assert sup.status() == [
+            {"name": "a", "ready": False, "running": False, "restarts": 0}
+        ]
+
+        try:
+            await sup.start_all()
+            assert sup.status() == [
+                {"name": "a", "ready": True, "running": True, "restarts": 0}
+            ]
+        finally:
+            await sup.shutdown(timeout=3.0)
+
+    @pytest.mark.asyncio
     async def test_shutdown_terminates_children(self) -> None:
         port = _free_port()
         sup = Supervisor([_http_child("a", port)])

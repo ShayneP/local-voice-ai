@@ -16,7 +16,6 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import Optional
 
 import uvicorn
 
@@ -49,7 +48,7 @@ def _llama_repo_cached(repo: str, env: dict[str, str]) -> bool:
     cache = _llama_cache_dir(env)
     if not cache.is_dir():
         return False
-    spec, tag = (repo.rsplit(":", 1) + ["latest"])[:2]
+    spec, tag = [*repo.rsplit(":", 1), "latest"][:2]
     manifest = cache / f"manifest={spec.replace('/', '=')}={tag}.json"
     if manifest.is_file():
         return True
@@ -139,14 +138,15 @@ def _build_specs(cfg: Config) -> list[ChildSpec]:
                 ChildSpec(
                     name="whisper",
                     argv=[
-                        "vox-box", "start",
-                        "--huggingface-repo-id", cfg.voxbox_hf_repo_id,
-                        "--data-dir", os.getenv("VOXBOX_DATA_DIR", "/data"),
-                        "--device", cfg.voxbox_device,
+                        py, "-m", "local_voice_ai.services.whisper.server",
                         "--host", "127.0.0.1",
                         "--port", str(cfg.stt_bind_port),
                     ],
-                    ready_url=f"http://127.0.0.1:{cfg.stt_bind_port}/v1/models",
+                    env={
+                        "WHISPER_MODEL": cfg.whisper_model,
+                        "DEVICE": cfg.device,
+                    },
+                    ready_url=f"http://127.0.0.1:{cfg.stt_bind_port}/health",
                     ready_timeout=600.0,
                 )
             )
@@ -208,14 +208,7 @@ async def _serve(cfg: Config) -> int:
         cfg.manage_livekit, cfg.manage_llama, cfg.manage_stt, cfg.manage_tts,
     )
 
-    try:
-        await supervisor.start_all()
-    except Exception:
-        logger.exception("startup failed; shutting down")
-        await supervisor.shutdown()
-        return 1
-
-    app = build_app(cfg)
+    app = build_app(cfg, status_provider=supervisor.status)
     uv_config = uvicorn.Config(
         app,
         host=cfg.web_host,
@@ -225,10 +218,43 @@ async def _serve(cfg: Config) -> int:
     )
     uv_server = uvicorn.Server(uv_config)
 
+    # Start the web server BEFORE the children: first boot can spend a long
+    # time downloading model weights, and the frontend polls /api/status to
+    # show per-child progress instead of a dead page. run_until_signal also
+    # starts now so SIGTERM/SIGINT during a slow startup aborts cleanly (the
+    # stop event makes each pending readiness wait raise).
     web_task = asyncio.create_task(uv_server.serve(), name="web")
     sup_task = asyncio.create_task(supervisor.run_until_signal(), name="supervisor")
+    startup_task = asyncio.create_task(supervisor.start_all(), name="startup")
 
-    done, _ = await asyncio.wait({web_task, sup_task}, return_when=asyncio.FIRST_COMPLETED)
+    done, _ = await asyncio.wait(
+        {web_task, sup_task, startup_task}, return_when=asyncio.FIRST_COMPLETED
+    )
+
+    if startup_task in done and startup_task.exception() is not None:
+        logger.error("startup failed; shutting down", exc_info=startup_task.exception())
+        uv_server.should_exit = True
+        await supervisor.shutdown()
+        for task in (web_task, sup_task):
+            task.cancel()
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):
+                pass
+        return 1
+
+    if not startup_task.done():
+        # web or supervisor exited first (signal during startup, port clash…)
+        startup_task.cancel()
+        try:
+            await startup_task
+        except (asyncio.CancelledError, Exception):
+            pass
+    elif startup_task in done:
+        logger.info("all children ready")
+        done, _ = await asyncio.wait(
+            {web_task, sup_task}, return_when=asyncio.FIRST_COMPLETED
+        )
 
     # Whatever finished first triggers a coordinated shutdown.
     uv_server.should_exit = True
@@ -262,7 +288,7 @@ def _download_models(cfg: Config) -> int:
     return 0
 
 
-def main(argv: Optional[list[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="local_voice_ai")
     sub = parser.add_subparsers(dest="cmd")
     sub.add_parser("serve", help="run the full supervised stack (default)")

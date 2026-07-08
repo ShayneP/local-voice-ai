@@ -12,7 +12,7 @@ Everything runs as managed children of one Python supervisor (`python -m local_v
 
 - **LiveKit server** (Go binary subprocess) for WebRTC signaling — skipped if `LIVEKIT_URL` points at LiveKit Cloud.
 - **llama.cpp** (`llama-server` binary subprocess) for the LLM — skipped if `LLAMA_BASE_URL` points elsewhere.
-- **Nemotron STT** or **Whisper (vox-box)** — Python uvicorn child, OpenAI-compatible.
+- **Nemotron STT** or **Whisper (faster-whisper)** — Python uvicorn child, OpenAI-compatible.
 - **Kokoro TTS** — Python uvicorn child, OpenAI-compatible.
 - **LiveKit Agents worker** — the orchestrator child.
 - **FastAPI** in the supervisor itself, serving `POST /api/connection-details` (token minting) and the statically-exported Next.js frontend.
@@ -21,13 +21,22 @@ Children speak HTTP only over `127.0.0.1`. The image exposes three ports: `8080`
 
 ## Getting started
 
+Run the prebuilt image (amd64):
+
+```bash
+docker run --rm -it \
+  -p 8080:8080 -p 7880:7880 -p 7881:7881 -p 7882:7882/udp \
+  -v local-voice-ai-models:/models \
+  ghcr.io/shaynep/local-voice-ai:latest
+```
+
+Or build from source (also the path for GPU builds and Apple Silicon):
+
 ```bash
 docker compose up --build
 ```
 
-Open <http://localhost:8080> and click the start button.
-
-The first build pulls upstream binaries (llama-server, livekit-server) and downloads the Nemotron + LLM weights on first request — expect tens of GB on first boot.
+Open <http://localhost:8080>. The first boot downloads the Nemotron + LLM weights — the page shows per-service startup progress until everything is ready, then the start button appears. Weights are cached in the `models` volume, so later boots are fast and work offline.
 
 ### GPU (NVIDIA)
 
@@ -122,4 +131,4 @@ See `.env` for the full list. The most important ones:
 - NVIDIA Nemotron Speech: <https://huggingface.co/nvidia/nemotron-speech-streaming-en-0.6b>
 - llama.cpp: <https://github.com/ggml-org/llama.cpp>
 - Kokoro TTS: <https://github.com/hexgrad/kokoro>
-- VoxBox (Whisper fallback): <https://pypi.org/project/vox-box/>
+- faster-whisper (Whisper fallback): <https://github.com/SYSTRAN/faster-whisper>

@@ -6,7 +6,7 @@ import base64
 import json
 import pathlib
 import tempfile
-from typing import Iterator
+from collections.abc import Iterator
 
 import pytest
 from fastapi.testclient import TestClient
@@ -38,6 +38,32 @@ class TestHealth:
         r = client.get("/healthz")
         assert r.status_code == 200
         assert r.json() == {"status": "ok"}
+
+
+class TestStatus:
+    def test_no_provider_reports_ready(self, client: TestClient) -> None:
+        # Without a supervisor (tests, bare API) the stack is trivially ready.
+        r = client.get("/api/status")
+        assert r.status_code == 200
+        assert r.json() == {"ready": True, "children": []}
+
+    def test_reports_children_not_ready(self, cfg: Config) -> None:
+        children = [
+            {"name": "llama", "ready": False, "running": True, "restarts": 0},
+            {"name": "kokoro", "ready": True, "running": True, "restarts": 0},
+        ]
+        client = TestClient(build_app(cfg, status_provider=lambda: children))
+        data = client.get("/api/status").json()
+        assert data["ready"] is False
+        assert data["children"] == children
+
+    def test_ready_when_all_children_ready(self, cfg: Config) -> None:
+        children = [
+            {"name": "llama", "ready": True, "running": True, "restarts": 0},
+            {"name": "agent", "ready": True, "running": True, "restarts": 1},
+        ]
+        client = TestClient(build_app(cfg, status_provider=lambda: children))
+        assert client.get("/api/status").json()["ready"] is True
 
 
 class TestConnectionDetails:

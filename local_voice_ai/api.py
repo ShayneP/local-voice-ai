@@ -11,8 +11,9 @@ from __future__ import annotations
 
 import logging
 import random
+from collections.abc import Callable
 from datetime import timedelta
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
@@ -24,7 +25,7 @@ from .config import Config
 logger = logging.getLogger("api")
 
 
-def _mint_token(cfg: Config, agent_name: Optional[str]) -> dict[str, Any]:
+def _mint_token(cfg: Config, agent_name: str | None) -> dict[str, Any]:
     participant_name = "user"
     participant_identity = f"voice_assistant_user_{random.randint(0, 9999)}"
     room_name = f"voice_assistant_room_{random.randint(0, 9999)}"
@@ -58,8 +59,22 @@ def _mint_token(cfg: Config, agent_name: Optional[str]) -> dict[str, Any]:
     }
 
 
-def build_app(cfg: Config) -> FastAPI:
+def build_app(
+    cfg: Config,
+    status_provider: Callable[[], list[dict[str, Any]]] | None = None,
+) -> FastAPI:
     app = FastAPI(title="local-voice-ai", version="0.1.0")
+
+    @app.get("/api/status")
+    async def status() -> dict[str, Any]:
+        """Per-child readiness, polled by the frontend's first-boot splash.
+
+        The web server starts before the children are ready (first boot can
+        spend a long time downloading model weights), so this is how the UI
+        knows whether the stack is usable yet.
+        """
+        children = status_provider() if status_provider is not None else []
+        return {"ready": all(c["ready"] for c in children), "children": children}
 
     @app.post("/api/connection-details")
     async def connection_details(request: Request) -> JSONResponse:
@@ -68,7 +83,7 @@ def build_app(cfg: Config) -> FastAPI:
         except Exception:
             body = {}
 
-        agent_name: Optional[str] = None
+        agent_name: str | None = None
         try:
             agent_name = body.get("room_config", {}).get("agents", [{}])[0].get("agent_name")
         except (AttributeError, IndexError, TypeError):

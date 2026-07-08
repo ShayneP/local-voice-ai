@@ -5,6 +5,7 @@ import { useSessionContext } from '@livekit/components-react';
 import type { AppConfig } from '@/app-config';
 import { SessionView } from '@/components/app/session-view';
 import { WelcomeView } from '@/components/app/welcome-view';
+import { useStackStatus } from '@/hooks/useStackStatus';
 
 const MotionWelcomeView = motion.create(WelcomeView);
 const MotionSessionView = motion.create(SessionView);
@@ -33,6 +34,7 @@ interface ViewControllerProps {
 
 export function ViewController({ appConfig }: ViewControllerProps) {
   const { isConnected, start } = useSessionContext();
+  const stackStatus = useStackStatus();
 
   return (
     <AnimatePresence mode="wait">
@@ -43,6 +45,8 @@ export function ViewController({ appConfig }: ViewControllerProps) {
           {...VIEW_MOTION_PROPS}
           startButtonText={appConfig.startButtonText}
           onStartCall={start}
+          stackReady={stackStatus.ready}
+          stackChildren={stackStatus.children}
         />
       )}
       {/* Session view */}

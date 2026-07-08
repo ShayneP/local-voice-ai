@@ -59,12 +59,12 @@ ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu
 COPY pyproject.toml ./
 COPY local_voice_ai ./local_voice_ai
 
-# Install: torch (with explicit index for CPU/CUDA selection) + the [ml] extras
-# in a single resolution pass so versions are consistent.
+# Install: torch (with explicit index for CPU/CUDA selection) + the [ml] and
+# [whisper] extras in a single resolution pass so versions are consistent.
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install --system --index-strategy unsafe-best-match \
         --extra-index-url ${TORCH_INDEX_URL} \
-        ".[ml]"
+        ".[ml,whisper]"
 
 # Drop in the binaries from upstream images.
 #
@@ -91,7 +91,7 @@ ENV FRONTEND_DIR=/app/frontend/out
 # Pre-download VAD + turn detector weights so cold start is faster
 RUN python -m local_voice_ai.agent download-files || true
 
-EXPOSE 8080 7880 7881
+EXPOSE 8080 7880 7881 7882/udp
 VOLUME ["/models"]
 
 ENTRYPOINT ["/usr/bin/tini", "--"]

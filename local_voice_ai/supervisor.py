@@ -15,7 +15,6 @@ import os
 import signal
 import sys
 from dataclasses import dataclass, field
-from typing import Awaitable, Callable, Optional
 
 import httpx
 
@@ -27,8 +26,8 @@ class ChildSpec:
     name: str
     argv: list[str]
     env: dict[str, str] = field(default_factory=dict)
-    cwd: Optional[str] = None
-    ready_url: Optional[str] = None
+    cwd: str | None = None
+    ready_url: str | None = None
     ready_timeout: float = 180.0
     max_restarts: int = 5
 
@@ -36,22 +35,34 @@ class ChildSpec:
 @dataclass
 class _Child:
     spec: ChildSpec
-    process: Optional[asyncio.subprocess.Process] = None
+    process: asyncio.subprocess.Process | None = None
     restart_count: int = 0
     ready: bool = False
-    pump_task: Optional[asyncio.Task] = None
-    watch_task: Optional[asyncio.Task] = None
+    pump_task: asyncio.Task | None = None
+    watch_task: asyncio.Task | None = None
 
 
 class Supervisor:
     def __init__(self, specs: list[ChildSpec]) -> None:
         self._children: list[_Child] = [_Child(spec=spec) for spec in specs]
         self._stop_event = asyncio.Event()
-        self._http: Optional[httpx.AsyncClient] = None
+        self._http: httpx.AsyncClient | None = None
 
     @property
     def stopping(self) -> bool:
         return self._stop_event.is_set()
+
+    def status(self) -> list[dict[str, object]]:
+        """Per-child snapshot for the /api/status endpoint (first-boot UI)."""
+        return [
+            {
+                "name": child.spec.name,
+                "ready": child.ready,
+                "running": bool(child.process and child.process.returncode is None),
+                "restarts": child.restart_count,
+            }
+            for child in self._children
+        ]
 
     async def start_all(self) -> None:
         """Spawn every child and wait for each to pass its readiness probe."""
@@ -143,7 +154,7 @@ class Supervisor:
         assert child.process is not None
         prefix = f"[{child.spec.name}]"
 
-        async def pump(stream: Optional[asyncio.StreamReader], level: int) -> None:
+        async def pump(stream: asyncio.StreamReader | None, level: int) -> None:
             if stream is None:
                 return
             while True:
