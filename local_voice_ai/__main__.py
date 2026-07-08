@@ -27,7 +27,7 @@ logger = logging.getLogger("main")
 
 
 def _llama_cache_dir(env: dict[str, str]) -> Path:
-    """The directory llama-server uses for --hf-repo downloads, mirroring its
+    """The legacy llama.cpp download cache, mirroring its
     fs_get_cache_directory() precedence given the env we pass the child."""
     if env.get("LLAMA_CACHE"):
         return Path(env["LLAMA_CACHE"])
@@ -36,19 +36,40 @@ def _llama_cache_dir(env: dict[str, str]) -> Path:
     return Path.home() / ".cache" / "llama.cpp"
 
 
+def _hf_hub_dir(env: dict[str, str]) -> Path:
+    """The Hugging Face hub cache current llama-server downloads into."""
+    if env.get("HF_HOME"):
+        return Path(env["HF_HOME"]) / "hub"
+    if env.get("XDG_CACHE_HOME"):
+        return Path(env["XDG_CACHE_HOME"]) / "huggingface" / "hub"
+    return Path.home() / ".cache" / "huggingface" / "hub"
+
+
 def _llama_repo_cached(repo: str, env: dict[str, str]) -> bool:
     """Best-effort check for whether a --hf-repo model is already downloaded, so
     we can start --offline automatically after the first successful run.
 
-    Mirrors llama.cpp's on-disk cache naming (``manifest=<org>=<repo>=<tag>.json``
-    plus ``<org>_<repo>_<file>.gguf``). Intentionally conservative: a false miss
-    just means we don't add --offline (unchanged network path), while we only
-    claim "cached" for this exact repo so a newly-changed repo still downloads.
+    Checks both cache layouts llama-server has used:
+      - HF hub (current): ``hub/models--<org>--<repo>/snapshots/*/<file>.gguf``
+      - legacy: ``llama.cpp/manifest=<org>=<repo>=<tag>.json`` + flat ggufs
+
+    Intentionally conservative: a false miss just means we don't add --offline
+    (unchanged network path), while we only claim "cached" for this exact
+    repo/quant so a newly-changed repo still downloads.
     """
+    spec, tag = [*repo.rsplit(":", 1), "latest"][:2]
+
+    # HF hub layout. A :quant tag selects a file whose name contains the tag.
+    hub_repo = _hf_hub_dir(env) / f"models--{spec.replace('/', '--')}"
+    if hub_repo.is_dir():
+        pattern = f"*{tag}*.gguf" if tag != "latest" else "*.gguf"
+        if any(hub_repo.glob(f"snapshots/*/{pattern}")):
+            return True
+
+    # Legacy layout.
     cache = _llama_cache_dir(env)
     if not cache.is_dir():
         return False
-    spec, tag = [*repo.rsplit(":", 1), "latest"][:2]
     manifest = cache / f"manifest={spec.replace('/', '=')}={tag}.json"
     if manifest.is_file():
         return True
@@ -124,6 +145,10 @@ def _build_specs(cfg: Config) -> list[ChildSpec]:
                     "--alias", cfg.llama_model_alias,
                     "--ctx-size", str(cfg.llama_ctx_size),
                     "--n-gpu-layers", str(cfg.llama_n_gpu_layers),
+                    # Voice agent: thinking models (e.g. gemma-4) must answer
+                    # directly — reasoning tokens are seconds of dead air
+                    # before TTS gets any text.
+                    "--reasoning", "off",
                 ],
                 env=llama_env,
                 ready_url=f"http://127.0.0.1:{cfg.llama_bind_port}/v1/models",

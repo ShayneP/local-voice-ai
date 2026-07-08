@@ -72,7 +72,7 @@ server.setup_fnc = prewarm
 async def my_agent(ctx: JobContext) -> None:
     ctx.log_context_fields = {"room": ctx.room.name}
 
-    llama_model = os.getenv("LLAMA_MODEL", "qwen3-4b")
+    llama_model = os.getenv("LLAMA_MODEL", "gemma-4-e2b")
     llama_base_url = os.getenv("LLAMA_BASE_URL", "http://127.0.0.1:11434/v1")
     llama_api_key = os.getenv("LLAMA_API_KEY", "no-key-needed")
 

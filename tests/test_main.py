@@ -22,11 +22,19 @@ import httpx
 import pytest
 
 import local_voice_ai.__main__ as main_mod
-from local_voice_ai.__main__ import _build_specs, _llama_cache_dir, _llama_repo_cached, _serve
+from local_voice_ai.__main__ import (
+    _build_specs,
+    _hf_hub_dir,
+    _llama_cache_dir,
+    _llama_repo_cached,
+    _serve,
+)
 from local_voice_ai.config import Config
 from local_voice_ai.supervisor import ChildSpec
 
-REPO = "unsloth/Qwen3-4B-Instruct-2507-GGUF"
+# Must match Config.llama_hf_repo (checked below) — the :tag selects the quant.
+REPO = "unsloth/gemma-4-E2B-it-qat-GGUF:UD-Q4_K_XL"
+BARE_REPO, TAG = REPO.rsplit(":", 1)
 
 
 @pytest.fixture(autouse=True)
@@ -38,16 +46,33 @@ def _isolated_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return tmp_path
 
 
-def _seed_manifest(cache_root: Path, repo: str = REPO, tag: str = "latest") -> None:
-    """Create the manifest file llama-server writes after an --hf-repo download."""
+def _seed_manifest(cache_root: Path, repo: str = BARE_REPO, tag: str = TAG) -> None:
+    """Create the manifest file legacy llama-server wrote after a download."""
     cache = cache_root / "llama.cpp"
     cache.mkdir(parents=True, exist_ok=True)
     (cache / f"manifest={repo.replace('/', '=')}={tag}.json").write_text("{}")
 
 
+def _seed_hub(cache_root: Path, repo: str = BARE_REPO, gguf: str | None = None) -> None:
+    """Mirror the HF hub layout current llama-server downloads into
+    (verified against a real b9909 download)."""
+    snap = (
+        cache_root / "huggingface" / "hub" / f"models--{repo.replace('/', '--')}"
+        / "snapshots" / "0123abc"
+    )
+    snap.mkdir(parents=True, exist_ok=True)
+    (snap / (gguf or f"gemma-4-E2B-it-qat-{TAG}.gguf")).write_text("x")
+
+
 def _llama_spec() -> ChildSpec:
     cfg = Config.from_env()
     return next(s for s in _build_specs(cfg) if s.name == "llama")
+
+
+def test_repo_constant_matches_config_default() -> None:
+    # The cache-seeding tests only prove auto-offline works if this constant
+    # is the repo the default config actually uses.
+    assert Config.from_env().llama_hf_repo == REPO
 
 
 class TestCacheDir:
@@ -60,6 +85,47 @@ class TestCacheDir:
 
     def test_home_fallback(self) -> None:
         assert _llama_cache_dir({}) == Path.home() / ".cache" / "llama.cpp"
+
+
+class TestHubDir:
+    def test_hf_home_wins(self) -> None:
+        env = {"HF_HOME": "/models", "XDG_CACHE_HOME": "/y"}
+        assert _hf_hub_dir(env) == Path("/models/hub")
+
+    def test_xdg_fallback(self) -> None:
+        assert _hf_hub_dir({"XDG_CACHE_HOME": "/y"}) == Path("/y/huggingface/hub")
+
+    def test_home_fallback(self) -> None:
+        assert _hf_hub_dir({}) == Path.home() / ".cache" / "huggingface" / "hub"
+
+
+class TestRepoCachedHubLayout:
+    def test_exact_repo_and_tag(self, tmp_path: Path) -> None:
+        _seed_hub(tmp_path)
+        assert _llama_repo_cached(REPO, {"XDG_CACHE_HOME": str(tmp_path)}) is True
+
+    def test_wrong_quant_tag_misses(self, tmp_path: Path) -> None:
+        _seed_hub(tmp_path)
+        env = {"XDG_CACHE_HOME": str(tmp_path)}
+        assert _llama_repo_cached(f"{BARE_REPO}:Q8_0", env) is False
+
+    def test_untagged_repo_matches_any_gguf(self, tmp_path: Path) -> None:
+        _seed_hub(tmp_path)
+        assert _llama_repo_cached(BARE_REPO, {"XDG_CACHE_HOME": str(tmp_path)}) is True
+
+    def test_other_repo_misses(self, tmp_path: Path) -> None:
+        _seed_hub(tmp_path)
+        assert _llama_repo_cached("foo/Bar-GGUF", {"XDG_CACHE_HOME": str(tmp_path)}) is False
+
+    def test_hf_home_layout(self, tmp_path: Path) -> None:
+        # Production passes HF_HOME=/models; hub lives at /models/hub.
+        snap = (
+            tmp_path / "hub" / f"models--{BARE_REPO.replace('/', '--')}"
+            / "snapshots" / "abc"
+        )
+        snap.mkdir(parents=True)
+        (snap / f"gemma-4-E2B-it-qat-{TAG}.gguf").write_text("x")
+        assert _llama_repo_cached(REPO, {"HF_HOME": str(tmp_path)}) is True
 
 
 class TestRepoCached:
@@ -75,11 +141,11 @@ class TestRepoCached:
         _seed_manifest(tmp_path)
         assert _llama_repo_cached(REPO, {"XDG_CACHE_HOME": str(tmp_path)}) is True
 
-    def test_manifest_with_quant_tag(self, tmp_path: Path) -> None:
-        _seed_manifest(tmp_path, tag="Q4_K_M")
+    def test_untagged_repo_uses_latest(self, tmp_path: Path) -> None:
+        _seed_manifest(tmp_path, tag="latest")
         env = {"XDG_CACHE_HOME": str(tmp_path)}
-        assert _llama_repo_cached(f"{REPO}:Q4_K_M", env) is True
-        assert _llama_repo_cached(REPO, env) is False  # :latest not downloaded
+        assert _llama_repo_cached(BARE_REPO, env) is True  # no tag → :latest
+        assert _llama_repo_cached(REPO, env) is False  # :UD-Q4_K_XL not downloaded
 
     def test_other_repo_not_cached(self, tmp_path: Path) -> None:
         _seed_manifest(tmp_path)
@@ -88,7 +154,7 @@ class TestRepoCached:
     def test_gguf_fallback_without_manifest(self, tmp_path: Path) -> None:
         cache = tmp_path / "llama.cpp"
         cache.mkdir()
-        gguf = "unsloth_Qwen3-4B-Instruct-2507-GGUF_Qwen3-4B-Instruct-2507-Q4_K_M.gguf"
+        gguf = "unsloth_gemma-4-E2B-it-qat-GGUF_gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf"
         (cache / gguf).write_text("x")
         assert _llama_repo_cached(REPO, {"XDG_CACHE_HOME": str(tmp_path)}) is True
 
@@ -132,6 +198,11 @@ class TestOfflineResolution:
         monkeypatch.setenv("LLAMA_MODEL_PATH", "/models/foo.gguf")
         monkeypatch.setenv("LLAMA_OFFLINE", "1")
         assert "--offline" in _llama_spec().argv
+
+    def test_reasoning_disabled_for_voice(self) -> None:
+        # Thinking models must answer directly — reasoning is dead air on voice.
+        argv = _llama_spec().argv
+        assert argv[argv.index("--reasoning") + 1] == "off"
 
     def test_cache_env_passed_to_child(self, _isolated_cache: Path) -> None:
         # The dir we probe must be the dir the child will actually use.

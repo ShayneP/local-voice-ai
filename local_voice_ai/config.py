@@ -65,9 +65,11 @@ class Config:
 
     # --- LLM (llama.cpp by default) -------------------------------------
     llama_base_url: str = "http://127.0.0.1:11434/v1"
-    llama_model: str = "qwen3-4b"
+    llama_model: str = "gemma-4-e2b"
     llama_api_key: str = "no-key-needed"
-    llama_hf_repo: str = "unsloth/Qwen3-4B-Instruct-2507-GGUF"
+    # Quantization-aware-trained quant — holds up much better at 4-bit than
+    # post-hoc quantization. The :tag suffix selects the quant within the repo.
+    llama_hf_repo: str = "unsloth/gemma-4-E2B-it-qat-GGUF:UD-Q4_K_XL"
     # Path to a local .gguf. When set, llama-server loads it directly with -m
     # instead of resolving --hf-repo against Hugging Face (works fully offline).
     llama_model_path: str = ""
@@ -77,7 +79,7 @@ class Config:
     # model is already cached, otherwise allow the first-run download.
     # See https://github.com/ShayneP/local-voice-ai/issues/9
     llama_offline: Optional[bool] = None
-    llama_model_alias: str = "qwen3-4b"
+    llama_model_alias: str = "gemma-4-e2b"
     llama_ctx_size: int = 16384
     llama_n_gpu_layers: int = 0
     llama_bind_port: int = 11434
