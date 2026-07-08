@@ -11,7 +11,7 @@
 Everything runs as managed children of one Python supervisor (`python -m local_voice_ai serve`):
 
 - **LiveKit server** (Go binary subprocess) for WebRTC signaling — skipped if `LIVEKIT_URL` points at LiveKit Cloud.
-- **llama.cpp** (`llama-server` binary subprocess) for the LLM — skipped if `LLAMA_BASE_URL` points elsewhere.
+- **llama.cpp** (`llama-server` binary subprocess) for the LLM — default model is Gemma 4 E2B (quantization-aware-trained 4-bit, ~2.6 GB); swap it with `LLAMA_HF_REPO=org/repo:quant`. Skipped if `LLAMA_BASE_URL` points elsewhere.
 - **Nemotron STT** or **Whisper (faster-whisper)** — Python uvicorn child, OpenAI-compatible.
 - **Kokoro TTS** — Python uvicorn child, OpenAI-compatible.
 - **LiveKit Agents worker** — the orchestrator child.
@@ -130,5 +130,6 @@ See `.env` for the full list. The most important ones:
 - LiveKit Agents: <https://docs.livekit.io/agents/>
 - NVIDIA Nemotron Speech: <https://huggingface.co/nvidia/nemotron-speech-streaming-en-0.6b>
 - llama.cpp: <https://github.com/ggml-org/llama.cpp>
+- Gemma 4 (default LLM, Unsloth QAT GGUF): <https://huggingface.co/unsloth/gemma-4-E2B-it-qat-GGUF>
 - Kokoro TTS: <https://github.com/hexgrad/kokoro>
 - faster-whisper (Whisper fallback): <https://github.com/SYSTRAN/faster-whisper>
