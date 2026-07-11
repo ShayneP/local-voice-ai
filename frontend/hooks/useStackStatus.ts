@@ -7,6 +7,8 @@ export interface StackChild {
   ready: boolean;
   running: boolean;
   restarts: number;
+  /** Download progress, e.g. "1.2 GB" — present while a model is downloading. */
+  detail?: string;
 }
 
 export interface StackStatus {

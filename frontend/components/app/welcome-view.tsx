@@ -26,6 +26,11 @@ function StackStartupStatus({ services }: { services: StackChild[] }) {
             <span className={child.ready ? '' : 'text-muted-foreground'}>
               {CHILD_LABELS[child.name] ?? child.name}
             </span>
+            {!child.ready && child.detail && (
+              <span className="text-muted-foreground ml-auto font-mono text-xs tabular-nums">
+                {child.detail}
+              </span>
+            )}
           </li>
         ))}
       </ul>

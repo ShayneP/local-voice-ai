@@ -28,9 +28,11 @@ from local_voice_ai.__main__ import (
     _llama_cache_dir,
     _llama_repo_cached,
     _serve,
+    _startup_line,
+    make_status_provider,
 )
 from local_voice_ai.config import Config
-from local_voice_ai.supervisor import ChildSpec
+from local_voice_ai.supervisor import ChildSpec, Supervisor
 
 # Must match Config.llama_hf_repo (checked below) — the :tag selects the quant.
 REPO = "unsloth/gemma-4-E2B-it-qat-GGUF:UD-Q4_K_XL"
@@ -288,6 +290,44 @@ class TestServeFirstBoot:
             with contextlib.suppress(asyncio.CancelledError):
                 rc = await asyncio.wait_for(serve_task, timeout=10)
                 assert rc == 0
+
+
+class TestStatusDetails:
+    """make_status_provider augments not-ready children with the bytes their
+    model download occupies so far (the '6 loading bars' data source)."""
+
+    def _provider(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setenv("HF_HOME", str(tmp_path))
+        cfg = Config.from_env()
+        sup = Supervisor(_build_specs(cfg))  # nothing spawned: all not-ready
+        return make_status_provider(sup, cfg), cfg
+
+    def test_no_detail_before_download_starts(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        provider, _ = self._provider(tmp_path, monkeypatch)
+        assert all("detail" not in c for c in provider())
+
+    def test_detail_reports_downloaded_bytes(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        provider, cfg = self._provider(tmp_path, monkeypatch)
+        repo_dir = (
+            tmp_path / "hub"
+            / f"models--{cfg.llama_hf_repo.split(':')[0].replace('/', '--')}"
+            / "blobs"
+        )
+        repo_dir.mkdir(parents=True)
+        (repo_dir / "x.incomplete").write_bytes(b"\0" * 2_000_000)
+        llama = next(c for c in provider() if c["name"] == "llama")
+        assert llama["detail"] == "2 MB"
+
+    def test_startup_line_format(self) -> None:
+        line = _startup_line([
+            {"name": "llama", "ready": False, "detail": "1.2 GB"},
+            {"name": "kokoro", "ready": True},
+        ])
+        assert line == "llama … 1.2 GB | kokoro ✓"
 
 
 class TestWhisperSpec:

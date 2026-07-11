@@ -17,11 +17,11 @@ Everything runs as managed children of one Python supervisor (`python -m local_v
 - **LiveKit Agents worker** — the orchestrator child.
 - **FastAPI** in the supervisor itself, serving `POST /api/connection-details` (token minting) and the statically-exported Next.js frontend.
 
-Children speak HTTP only over `127.0.0.1`. The image exposes three ports: `8080` (web), `7880`, `7881` (LiveKit WebRTC, only if running locally).
+Children speak HTTP only over `127.0.0.1`. The image exposes four ports: `8080` (web), `7880`, `7881`, `7882/udp` (LiveKit WebRTC, only if running locally).
 
 ## Getting started
 
-Run the prebuilt image (amd64):
+Run the prebuilt image (amd64 + arm64):
 
 ```bash
 docker run --rm -it \
@@ -30,13 +30,13 @@ docker run --rm -it \
   ghcr.io/shaynep/local-voice-ai:latest
 ```
 
-Or build from source (also the path for GPU builds and Apple Silicon):
+Or build from source (also the path for GPU builds):
 
 ```bash
 docker compose up --build
 ```
 
-Open <http://localhost:8080>. The first boot downloads the Nemotron + LLM weights — the page shows per-service startup progress until everything is ready, then the start button appears. Weights are cached in the `models` volume, so later boots are fast and work offline.
+Open <http://localhost:8080>. The first boot downloads the Nemotron + LLM weights — the page shows per-service progress with download sizes, and the terminal logs a compact status heartbeat plus an unmissable “ready” banner when everything is up. Weights are cached in the `models` volume, so later boots are fast and work offline.
 
 ### GPU (NVIDIA)
 
@@ -51,7 +51,10 @@ verify with `docker run --gpus all ubuntu nvidia-smi`.
 
 ### Apple Silicon
 
-The CPU image works as-is. `llama-server` uses Metal automatically through its bundled binary.
+The prebuilt image runs natively (arm64), but **CPU-only** — Docker on macOS is a
+VM with no Metal access. For GPU (Metal) inference, run bare-metal via
+[Local development](#local-development-no-docker) below, where `llama-server`
+picks up Metal automatically.
 
 ## Swapping in cloud providers
 
@@ -67,6 +70,9 @@ Each service has a single "manage" decision driven by its base URL — point it 
 The supervisor logs which children it manages on startup.
 
 ## Local development (no Docker)
+
+Requires Python 3.11+, plus the `livekit-server` and `llama-server` binaries on
+your PATH (macOS: `brew install livekit llama.cpp`).
 
 ```bash
 # Python side
@@ -90,6 +96,7 @@ cd frontend && pnpm install && pnpm run dev
 │  ├── child: livekit-agents worker                                │
 │  └── in-process: FastAPI on :8080                                 │
 │        ├── POST /api/connection-details  (token minting)         │
+│        ├── GET  /api/status              (per-child readiness)   │
 │        └── GET  /*                       (static frontend)       │
 └───────────────────────────────────────────────────────────────────┘
 ```
@@ -102,14 +109,19 @@ cd frontend && pnpm install && pnpm run dev
 │  ├─ __main__.py          # python -m local_voice_ai serve
 │  ├─ supervisor.py        # async process supervisor
 │  ├─ config.py            # env-driven config + manage-X flags
-│  ├─ api.py               # FastAPI: token route + static frontend
+│  ├─ api.py               # FastAPI: token route, status, static frontend
 │  ├─ agent.py             # LiveKit Agents worker
+│  ├─ wakeword.py          # optional "hey livekit" gate for the agent
 │  └─ services/
 │     ├─ nemotron/server.py
+│     ├─ whisper/server.py
 │     └─ kokoro/server.py
 ├─ frontend/               # Next.js (configured for static export)
+├─ tests/                  # pytest suite
 ├─ Dockerfile              # multi-stage build
-├─ docker-compose.yml      # one service
+├─ docker-compose.yml      # one service (CPU default)
+├─ docker-compose.gpu.yml  # NVIDIA overlay: CUDA build + GPU reservation
+├─ .github/workflows/      # CI: tests + multi-arch image publish to GHCR
 └─ pyproject.toml          # one Python package, one venv
 ```
 
@@ -121,7 +133,7 @@ See `.env` for the full list. The most important ones:
 - `LLAMA_BASE_URL`, `LLAMA_MODEL`, `LLAMA_HF_REPO`, `LLAMA_N_GPU_LAYERS`
 - `LLAMA_OFFLINE` — offline LLM startup. Auto by default: once the model is cached, it starts with no internet (skips the Hugging Face lookup); the first run still downloads. Set `LLAMA_OFFLINE=1` to force it, or `0` to always re-check. `LLAMA_MODEL_PATH=/models/…​.gguf` loads a local file directly instead.
 - `WAKE_WORD=1` — the agent joins deaf and only starts listening after it hears **“Hey LiveKit”** (on-device detection via [livekit-wakeword](https://github.com/livekit/livekit-wakeword), model baked into the image). `WAKE_WORD_THRESHOLD` (default `0.5`) tunes sensitivity; scores are logged at DEBUG for calibration.
-- `STT_PROVIDER` (`nemotron`|`whisper`), `STT_BASE_URL`, `STT_MODEL`
+- `STT_PROVIDER` (`nemotron`|`whisper`), `STT_BASE_URL`, `STT_MODEL`; `WHISPER_MODEL` picks the faster-whisper model for the whisper provider.
 - `TTS_BASE_URL`, `TTS_VOICE`
 - `WEB_PORT` (default `8080`)
 - `MANAGE_LIVEKIT`, `MANAGE_LLAMA`, `MANAGE_STT`, `MANAGE_TTS` — explicit overrides for the auto-detected "is the URL external?" logic.
@@ -135,3 +147,4 @@ See `.env` for the full list. The most important ones:
 - Gemma 4 (default LLM, Unsloth QAT GGUF): <https://huggingface.co/unsloth/gemma-4-E2B-it-qat-GGUF>
 - Kokoro TTS: <https://github.com/hexgrad/kokoro>
 - faster-whisper (Whisper fallback): <https://github.com/SYSTRAN/faster-whisper>
+- livekit-wakeword ("hey livekit" detection): <https://github.com/livekit/livekit-wakeword>

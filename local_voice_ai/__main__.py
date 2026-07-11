@@ -77,6 +77,66 @@ def _llama_repo_cached(repo: str, env: dict[str, str]) -> bool:
     return any(p.suffix == ".gguf" for p in cache.glob(f"{prefix}*.gguf"))
 
 
+def _dir_size(path: Path) -> int:
+    """Total bytes under ``path`` (0 if missing). Cheap: /models holds few files."""
+    total = 0
+    if path.is_dir():
+        for p in path.rglob("*"):
+            try:
+                if p.is_file():
+                    total += p.stat().st_size
+            except OSError:
+                continue
+    return total
+
+
+def _hub_repo_dir(repo: str) -> str:
+    """HF hub cache dir name for a repo id (tag/quant suffix stripped)."""
+    return "models--" + repo.split(":", 1)[0].replace("/", "--")
+
+
+def make_status_provider(supervisor: Supervisor, cfg: Config):
+    """Wrap ``supervisor.status()`` with per-child download detail.
+
+    Model downloads dominate first boot, so while a child isn't ready we
+    report how many bytes its models occupy on disk. Totals aren't knowable
+    up front (llama resolves the quant at runtime), so this is a growing
+    byte count rather than a fake percentage.
+    """
+    hub = _hf_hub_dir(dict(os.environ))
+    repo_for_child = {
+        "llama": _hub_repo_dir(cfg.llama_hf_repo),
+        "nemotron": _hub_repo_dir(cfg.nemotron_model_name),
+        "whisper": _hub_repo_dir(cfg.whisper_model),
+        "kokoro": _hub_repo_dir("hexgrad/Kokoro-82M"),
+    }
+
+    def status() -> list[dict[str, object]]:
+        children = supervisor.status()
+        for child in children:
+            repo = repo_for_child.get(str(child["name"]))
+            if child["ready"] or repo is None:
+                continue
+            size = _dir_size(hub / repo)
+            if size > 1_000_000:  # only meaningful once a download has begun
+                child["detail"] = (
+                    f"{size / 1e9:.1f} GB" if size >= 1e9 else f"{size / 1e6:.0f} MB"
+                )
+        return children
+
+    return status
+
+
+def _startup_line(children: list[dict[str, object]]) -> str:
+    """One compact line per poll: ``llama … 1.2 GB | nemotron ✓ | …``"""
+    parts = []
+    for c in children:
+        mark = "✓" if c["ready"] else "…"
+        detail = f" {c['detail']}" if c.get("detail") else ""
+        parts.append(f"{c['name']} {mark}{detail}")
+    return " | ".join(parts)
+
+
 def _build_specs(cfg: Config) -> list[ChildSpec]:
     specs: list[ChildSpec] = []
     py = sys.executable
@@ -233,7 +293,8 @@ async def _serve(cfg: Config) -> int:
         cfg.manage_livekit, cfg.manage_llama, cfg.manage_stt, cfg.manage_tts,
     )
 
-    app = build_app(cfg, status_provider=supervisor.status)
+    status_provider = make_status_provider(supervisor, cfg)
+    app = build_app(cfg, status_provider=status_provider)
     uv_config = uvicorn.Config(
         app,
         host=cfg.web_host,
@@ -252,9 +313,19 @@ async def _serve(cfg: Config) -> int:
     sup_task = asyncio.create_task(supervisor.run_until_signal(), name="supervisor")
     startup_task = asyncio.create_task(supervisor.start_all(), name="startup")
 
+    async def _report_startup() -> None:
+        # A compact heartbeat so `docker compose up` shows startup at a glance
+        # instead of a wall of interleaved child logs.
+        while True:
+            await asyncio.sleep(10)
+            logger.info("starting: %s", _startup_line(status_provider()))
+
+    reporter_task = asyncio.create_task(_report_startup(), name="startup-reporter")
+
     done, _ = await asyncio.wait(
         {web_task, sup_task, startup_task}, return_when=asyncio.FIRST_COMPLETED
     )
+    reporter_task.cancel()
 
     if startup_task in done and startup_task.exception() is not None:
         logger.error("startup failed; shutting down", exc_info=startup_task.exception())
@@ -276,7 +347,19 @@ async def _serve(cfg: Config) -> int:
         except (asyncio.CancelledError, Exception):
             pass
     elif startup_task in done:
-        logger.info("all children ready")
+        # The line first-time users are looking for — make it unmissable.
+        logger.info(
+            "\n\n"
+            "  ┌────────────────────────────────────────────────┐\n"
+            "  │                                                │\n"
+            "  │   ✅  local-voice-ai is ready                  │\n"
+            "  │                                                │\n"
+            "  │   👉  Open  http://localhost:%-5d             │\n"
+            "  │       and click “Start call”                   │\n"
+            "  │                                                │\n"
+            "  └────────────────────────────────────────────────┘\n",
+            cfg.web_port,
+        )
         done, _ = await asyncio.wait(
             {web_task, sup_task}, return_when=asyncio.FIRST_COMPLETED
         )
