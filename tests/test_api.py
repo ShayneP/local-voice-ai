@@ -45,7 +45,12 @@ class TestStatus:
         # Without a supervisor (tests, bare API) the stack is trivially ready.
         r = client.get("/api/status")
         assert r.status_code == 200
-        assert r.json() == {"ready": True, "children": []}
+        assert r.json() == {"ready": True, "children": [], "wake_word": False}
+
+    def test_wake_word_flag_surfaces(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("WAKE_WORD", "1")
+        client = TestClient(build_app(Config.from_env()))
+        assert client.get("/api/status").json()["wake_word"] is True
 
     def test_reports_children_not_ready(self, cfg: Config) -> None:
         children = [

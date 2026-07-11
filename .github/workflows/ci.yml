@@ -7,6 +7,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+env:
+  # Image refs must be lowercase; github.repository is ShayneP/local-voice-ai.
+  IMAGE: ghcr.io/shaynep/local-voice-ai
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -39,10 +43,20 @@ jobs:
 
   # Publish the prebuilt image so getting started is `docker run`, not a
   # multi-GB local build. Runs only on pushes to main and version tags.
+  # Each architecture builds natively (no QEMU — the ML stack would take
+  # hours emulated); a merge job stitches the digests into one manifest.
   docker:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     needs: [test, frontend]
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
       packages: write
@@ -64,23 +78,66 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ matrix.platform }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.platform }}
+
+      - name: Export digest
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ matrix.platform == 'linux/amd64' && 'amd64' || 'arm64' }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  docker-merge:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: [docker]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digests-*
+          merge-multiple: true
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository }}
+          images: ${{ env.IMAGE }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=semver,pattern={{version}}
             type=sha
 
-      # amd64 only: the ML stack under QEMU takes hours and Apple Silicon users
-      # are better served by the native local build (llama.cpp uses Metal).
-      - uses: docker/build-push-action@v6
-        with:
-          context: .
-          platforms: linux/amd64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+      - name: Create multi-arch manifest
+        working-directory: /tmp/digests
+        run: |
+          docker buildx imagetools create \
+            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf '${{ env.IMAGE }}@sha256:%s ' *)
+
+      - name: Inspect
+        run: docker buildx imagetools inspect ${{ env.IMAGE }}:latest

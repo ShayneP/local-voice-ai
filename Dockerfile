@@ -91,6 +91,10 @@ ENV FRONTEND_DIR=/app/frontend/out
 # Pre-download VAD + turn detector weights so cold start is faster
 RUN python -m local_voice_ai.agent download-files || true
 
+# Pretrained "hey livekit" wake word model (~1 MB), used when WAKE_WORD=1
+ADD https://github.com/livekit-examples/hello-wakeword/raw/main/client/models/hey_livekit.onnx \
+    /app/models/wakeword/hey_livekit.onnx
+
 EXPOSE 8080 7880 7881 7882/udp
 VOLUME ["/models"]
 

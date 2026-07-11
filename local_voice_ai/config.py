@@ -107,6 +107,13 @@ class Config:
     tts_bind_port: int = 8880
     manage_tts: bool = True
 
+    # --- Wake word (off by default) --------------------------------------
+    # When enabled the agent joins deaf and only starts listening after the
+    # wake phrase ("hey livekit") is detected on the user's microphone.
+    wake_word: bool = False
+    wake_word_model: str = "/app/models/wakeword/hey_livekit.onnx"
+    wake_word_threshold: float = 0.5
+
     # --- Device ---------------------------------------------------------
     device: str = "cpu"  # cpu | cuda | mps
 
@@ -172,6 +179,12 @@ class Config:
             nemotron_model_id=os.getenv("NEMOTRON_MODEL_ID", cls.nemotron_model_id),
             whisper_model=os.getenv("WHISPER_MODEL", cls.whisper_model),
             #
+            wake_word=_env_bool("WAKE_WORD", cls.wake_word),
+            wake_word_model=os.getenv("WAKE_WORD_MODEL", cls.wake_word_model),
+            wake_word_threshold=float(
+                os.getenv("WAKE_WORD_THRESHOLD", str(cls.wake_word_threshold))
+            ),
+            #
             tts_base_url=tts_base_url,
             tts_voice=os.getenv("TTS_VOICE", cls.tts_voice),
             tts_api_key=os.getenv("TTS_API_KEY", cls.tts_api_key),
@@ -195,6 +208,9 @@ class Config:
             "STT_BASE_URL": self.stt_base_url,
             "STT_MODEL": self.stt_model,
             "STT_API_KEY": self.stt_api_key,
+            "WAKE_WORD": "1" if self.wake_word else "0",
+            "WAKE_WORD_MODEL": self.wake_word_model,
+            "WAKE_WORD_THRESHOLD": str(self.wake_word_threshold),
             "TTS_BASE_URL": self.tts_base_url,
             "TTS_VOICE": self.tts_voice,
             "TTS_API_KEY": self.tts_api_key,

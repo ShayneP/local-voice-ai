@@ -47,6 +47,7 @@ export function ViewController({ appConfig }: ViewControllerProps) {
           onStartCall={start}
           stackReady={stackStatus.ready}
           stackChildren={stackStatus.children}
+          wakeWord={stackStatus.wakeWord}
         />
       )}
       {/* Session view */}

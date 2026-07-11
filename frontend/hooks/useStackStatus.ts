@@ -12,6 +12,7 @@ export interface StackChild {
 export interface StackStatus {
   ready: boolean;
   children: StackChild[];
+  wakeWord: boolean;
 }
 
 const POLL_INTERVAL_MS = 2000;
@@ -25,7 +26,11 @@ const POLL_INTERVAL_MS = 2000;
  * without the Python backend), the stack is treated as ready.
  */
 export function useStackStatus(): StackStatus {
-  const [status, setStatus] = useState<StackStatus>({ ready: false, children: [] });
+  const [status, setStatus] = useState<StackStatus>({
+    ready: false,
+    children: [],
+    wakeWord: false,
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -36,9 +41,10 @@ export function useStackStatus(): StackStatus {
       try {
         const res = await fetch('/api/status', { cache: 'no-store' });
         if (!res.ok) throw new Error(`status ${res.status}`);
-        next = await res.json();
+        const data = await res.json();
+        next = { ready: data.ready, children: data.children, wakeWord: !!data.wake_word };
       } catch {
-        next = { ready: true, children: [] }; // fail open
+        next = { ready: true, children: [], wakeWord: false }; // fail open
       }
       if (cancelled) return;
       setStatus(next);

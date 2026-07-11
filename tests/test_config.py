@@ -121,6 +121,26 @@ class TestLlamaOffline:
         assert Config.from_env().llama_model_path == "/models/foo.gguf"
 
 
+class TestWakeWord:
+    def test_disabled_by_default(self) -> None:
+        cfg = Config.from_env()
+        assert cfg.wake_word is False
+        assert cfg.wake_word_threshold == 0.5
+
+    def test_enabled_via_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("WAKE_WORD", "1")
+        monkeypatch.setenv("WAKE_WORD_THRESHOLD", "0.3")
+        cfg = Config.from_env()
+        assert cfg.wake_word is True
+        assert cfg.wake_word_threshold == 0.3
+
+    def test_passed_to_agent_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("WAKE_WORD", "1")
+        env = Config.from_env().agent_env()
+        assert env["WAKE_WORD"] == "1"
+        assert "WAKE_WORD_MODEL" in env and "WAKE_WORD_THRESHOLD" in env
+
+
 class TestSttProviderDefaults:
     def test_nemotron_default_model(self) -> None:
         cfg = Config.from_env()

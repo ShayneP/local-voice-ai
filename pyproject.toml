@@ -6,13 +6,14 @@ build-backend = "setuptools.build_meta"
 name = "local-voice-ai"
 version = "0.1.0"
 description = "Local voice AI assistant: a single supervised process bundling LiveKit Agents, llama.cpp, Nemotron STT, and Kokoro TTS."
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 
 dependencies = [
     # Agent framework
     "livekit-agents[silero,turn-detector,openai]~=1.3",
     "livekit-plugins-noise-cancellation~=0.2",
     "livekit-api>=0.8",
+    "livekit-wakeword>=0.2",  # optional wake word gate (numpy + onnxruntime only)
     "python-dotenv",
 
     # Supervisor + token-mint API

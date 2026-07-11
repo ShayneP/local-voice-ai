@@ -59,6 +59,7 @@ interface WelcomeViewProps {
   onStartCall: () => void;
   stackReady: boolean;
   stackChildren: StackChild[];
+  wakeWord: boolean;
 }
 
 export const WelcomeView = ({
@@ -66,6 +67,7 @@ export const WelcomeView = ({
   onStartCall,
   stackReady,
   stackChildren,
+  wakeWord,
   ref,
 }: React.ComponentProps<'div'> & WelcomeViewProps) => {
   return (
@@ -78,9 +80,23 @@ export const WelcomeView = ({
         </p>
 
         {stackReady ? (
-          <Button variant="primary" size="lg" onClick={onStartCall} className="mt-6 w-64 font-mono">
-            {startButtonText}
-          </Button>
+          <>
+            <Button
+              variant="primary"
+              size="lg"
+              onClick={onStartCall}
+              className="mt-6 w-64 font-mono"
+            >
+              {startButtonText}
+            </Button>
+            {wakeWord && (
+              <p className="text-muted-foreground mt-3 text-sm">
+                Wake word is on — after connecting, say{' '}
+                <span className="text-foreground font-medium">“Hey LiveKit”</span> to wake the
+                assistant.
+              </p>
+            )}
+          </>
         ) : (
           <StackStartupStatus services={stackChildren} />
         )}

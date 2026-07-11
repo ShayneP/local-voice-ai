@@ -74,7 +74,12 @@ def build_app(
         knows whether the stack is usable yet.
         """
         children = status_provider() if status_provider is not None else []
-        return {"ready": all(c["ready"] for c in children), "children": children}
+        return {
+            "ready": all(c["ready"] for c in children),
+            "children": children,
+            # Lets the frontend hint "say the wake phrase" when enabled.
+            "wake_word": cfg.wake_word,
+        }
 
     @app.post("/api/connection-details")
     async def connection_details(request: Request) -> JSONResponse:

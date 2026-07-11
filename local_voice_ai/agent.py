@@ -97,6 +97,10 @@ async def my_agent(ctx: JobContext) -> None:
         stt_provider, stt_model, llama_base_url, llama_model, tts_base_url,
     )
 
+    wake_word = os.getenv("WAKE_WORD", "").strip().lower() in {"1", "true", "yes", "on"}
+    wake_word_model = os.getenv("WAKE_WORD_MODEL", "/app/models/wakeword/hey_livekit.onnx")
+    wake_word_threshold = float(os.getenv("WAKE_WORD_THRESHOLD", "0.5"))
+
     session = AgentSession(
         stt=openai.STT(base_url=stt_base_url, model=stt_model, api_key=stt_api_key),
         llm=openai.LLM(base_url=llama_base_url, model=llama_model, api_key=llama_api_key),
@@ -115,6 +119,33 @@ async def my_agent(ctx: JobContext) -> None:
 
     await session.start(agent=Assistant(), room=ctx.room)
     await ctx.connect()
+
+    if wake_word:
+        # Join deaf, wait for the wake phrase, then wake up and greet.
+        from .wakeword import wait_for_wake_word
+
+        session.input.set_audio_enabled(False)
+        participant = await ctx.wait_for_participant()
+        try:
+            await wait_for_wake_word(participant, wake_word_model, wake_word_threshold)
+        except Exception:
+            # Fail open: a broken detector shouldn't brick the assistant.
+            logger.exception("wake word detection failed; enabling audio input")
+        session.input.set_audio_enabled(True)
+        session.generate_reply(
+            instructions=(
+                "You just woke up because the user said the wake phrase. "
+                "Greet them very briefly and ask how you can help."
+            )
+        )
+    else:
+        # Speak first so the user knows the audio path works.
+        session.generate_reply(
+            instructions=(
+                "Greet the user warmly in one short sentence and invite them "
+                "to ask you anything."
+            )
+        )
 
 
 if __name__ == "__main__":
