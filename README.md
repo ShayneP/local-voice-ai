@@ -41,12 +41,13 @@ Open <http://localhost:8080>. The first boot downloads the Nemotron + LLM weight
 ### GPU (NVIDIA)
 
 ```bash
-LLAMA_IMAGE=ghcr.io/ggml-org/llama.cpp:server-cuda \
-PYTHON_BASE=nvidia/cuda:12.4.1-runtime-ubuntu22.04 \
-TORCH_INDEX_URL=https://download.pytorch.org/whl/cu124 \
-LLAMA_N_GPU_LAYERS=35 \
-docker compose up --build
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
 ```
+
+The overlay swaps in the CUDA llama.cpp binary + CUDA torch wheels, grants the
+GPU to the container, and offloads the whole LLM (`LLAMA_N_GPU_LAYERS=999`,
+override to partially offload). Requires the [NVIDIA container toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) —
+verify with `docker run --gpus all ubuntu nvidia-smi`.
 
 ### Apple Silicon
 

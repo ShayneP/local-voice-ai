@@ -1,0 +1,24 @@
+# NVIDIA GPU overlay. Run with:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
+#
+# Requires the NVIDIA container toolkit (`docker run --gpus all ubuntu nvidia-smi`
+# should print your GPU). This overlay swaps in the CUDA llama.cpp binary and
+# CUDA torch wheels, grants the GPU to the container, and defaults the LLM to
+# full GPU offload + torch services to CUDA.
+services:
+  app:
+    build:
+      args:
+        LLAMA_IMAGE: ${LLAMA_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-cuda}
+        TORCH_INDEX_URL: ${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu124}
+    environment:
+      LLAMA_N_GPU_LAYERS: ${LLAMA_N_GPU_LAYERS:-999}
+      DEVICE: ${DEVICE:-cuda}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
