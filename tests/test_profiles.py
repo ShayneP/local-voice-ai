@@ -292,3 +292,72 @@ class TestSavedSelection:
             memory_budget_gib=5.5,
             detected_memory_gib=8.0,
         )
+
+
+class TestLargeProfiles:
+    """The 12 GB-class profiles, and the guards that keep them from surprising.
+
+    Both were measured on an RTX 4070 SUPER (12 GB): 'large' holds a dense 12B
+    entirely in VRAM, while 'xl' keeps a 26B model's experts in system RAM and
+    so has the smaller VRAM footprint of the two.
+    """
+
+    @pytest.fixture
+    def catalog(self):
+        return load_catalog(DEFAULT_CATALOG_PATH)
+
+    def _cuda(self, *, vram: float, ram: float) -> HardwareInfo:
+        return HardwareInfo(
+            system="Linux",
+            machine="x86_64",
+            platform_key="nvidia-cuda",
+            device_name="NVIDIA GPU",
+            accelerator="cuda",
+            memory_topology="discrete",
+            total_memory_gib=ram,
+            accelerator_memory_gib=vram,
+        )
+
+    def test_auto_still_recommends_balanced_on_a_12gb_card(self, catalog) -> None:
+        # Adding bigger profiles must not turn a 3.8 GB first run into 15.9 GB.
+        resolved = resolve_profile(catalog, self._cuda(vram=12.0, ram=64.0))
+
+        assert resolved.model.key == "balanced"
+
+    def test_expert_offload_profile_needs_system_memory(self, catalog) -> None:
+        # 'xl' fits the VRAM budget easily, so only the RAM guard excludes it.
+        resolved = resolve_profile(catalog, self._cuda(vram=12.0, ram=16.0), requested="xl")
+
+        assert resolved.model.minimum_budget_gib <= resolved.memory_budget_gib
+        assert "system RAM" in (resolved.warning or "")
+
+    def test_ample_system_memory_raises_no_warning(self, catalog) -> None:
+        resolved = resolve_profile(catalog, self._cuda(vram=12.0, ram=64.0), requested="xl")
+
+        assert "system RAM" not in (resolved.warning or "")
+
+    def test_offload_profile_keeps_experts_on_the_cpu(self, catalog) -> None:
+        resolved = resolve_profile(catalog, self._cuda(vram=12.0, ram=64.0), requested="xl")
+
+        assert resolved.environment["LLAMA_ARG_CPU_MOE"] == "1"
+
+    @pytest.mark.parametrize("key", ["large", "xl"])
+    def test_only_offered_where_they_were_measured(self, catalog, key: str) -> None:
+        # Neither was run on Apple Silicon or CPU-only, so neither is offered there.
+        assert catalog.models[key].platforms == ("nvidia-cuda",)
+
+    def test_not_offered_on_apple_silicon(self, catalog) -> None:
+        hardware = HardwareInfo(
+            system="Darwin",
+            machine="arm64",
+            platform_key="apple-silicon",
+            device_name="Apple M3 Pro",
+            accelerator="metal",
+            memory_topology="shared",
+            total_memory_gib=64.0,
+        )
+
+        offered = {model.key for model in catalog.ordered_models("apple-silicon")}
+
+        assert {"large", "xl"}.isdisjoint(offered)
+        assert resolve_profile(catalog, hardware).model.key != "xl"

@@ -66,6 +66,12 @@ class ModelProfile:
     tts: str
     environment: Mapping[str, str]
     platforms: tuple[str, ...] = ()
+    # System RAM the stack needs, beyond the accelerator budget. Only profiles
+    # that deliberately spend host memory set this: a mixture-of-experts model
+    # with its experts kept on the CPU has a small VRAM footprint but holds the
+    # full weights in RAM, so the accelerator budget alone would call it a fit
+    # on a machine that would then swap.
+    minimum_system_memory_gib: float = 0.0
 
     def supports(self, platform_key: str) -> bool:
         """Return whether this model stack can run on ``platform_key``."""
@@ -153,6 +159,7 @@ def load_catalog(path: Path = DEFAULT_CATALOG_PATH) -> ProfileCatalog:
             tts=str(values["tts"]),
             environment=_string_map(values.get("environment"), f"models.{key}.environment"),
             platforms=_string_tuple(values.get("platforms"), f"models.{key}.platforms"),
+            minimum_system_memory_gib=float(values.get("minimum_system_memory_gib", 0.0)),
         )
 
     platforms: dict[str, PlatformProfile] = {}
@@ -223,7 +230,7 @@ def _total_memory_bytes() -> int:
         import ctypes
 
         class MemoryStatus(ctypes.Structure):
-            _fields_ = [  # noqa: RUF012 - required ctypes class declaration
+            _fields_ = [
                 ("length", ctypes.c_ulong),
                 ("memory_load", ctypes.c_ulong),
                 ("total_physical", ctypes.c_ulonglong),
@@ -365,7 +372,12 @@ def resolve_profile(
         raise ValueError(f"no model profiles support {hardware.platform_key!r}")
     automatic = requested == "auto"
     if automatic:
-        eligible = [profile for profile in ordered if profile.minimum_budget_gib <= budget]
+        eligible = [
+            profile
+            for profile in ordered
+            if profile.minimum_budget_gib <= budget
+            and profile.minimum_system_memory_gib <= hardware.total_memory_gib
+        ]
         model = eligible[-1] if eligible else ordered[0]
         if platform_profile.max_profile:
             cap = catalog.models[platform_profile.max_profile]
@@ -378,15 +390,19 @@ def resolve_profile(
             choices = ", ".join(catalog.models)
             raise ValueError(f"unknown profile {requested!r}; choose one of: {choices}") from exc
         if not model.supports(hardware.platform_key):
-            raise ValueError(
-                f"profile {requested!r} does not support {hardware.platform_key!r}"
-            )
+            raise ValueError(f"profile {requested!r} does not support {hardware.platform_key!r}")
 
     warnings: list[str] = []
     if model.minimum_budget_gib > budget:
         warnings.append(
             f"{model.label} exceeds the {budget:.1f} GB budget "
             f"(needs about {model.minimum_budget_gib:.1f} GB)"
+        )
+    if model.minimum_system_memory_gib > hardware.total_memory_gib:
+        warnings.append(
+            f"{model.label} keeps its experts in system RAM and needs about "
+            f"{model.minimum_system_memory_gib:.0f} GB, but this machine has "
+            f"{hardware.total_memory_gib:.0f} GB"
         )
     if not automatic and platform_profile.max_profile:
         cap = catalog.models[platform_profile.max_profile]

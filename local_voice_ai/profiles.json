@@ -86,6 +86,52 @@
         "STT_PROVIDER": "nemotron-cpp",
         "STT_MODEL": "nemotron-speech-streaming"
       }
+    },
+    "large": {
+      "rank": 30,
+      "label": "Large (12B, needs 10 GB VRAM)",
+      "description": "A dense 12B model held entirely on the GPU, for the quickest replies a 12 GB card can give.",
+      "minimum_budget_gib": 9.5,
+      "target_memory_gib": 9.4,
+      "download_gib": 6.6,
+      "llm": "Gemma 4 12B Q4_K_M",
+      "stt": "Nemotron Speech 0.6B Q8 (native streaming)",
+      "tts": "Kokoro 82M",
+      "platforms": ["nvidia-cuda"],
+      "environment": {
+        "LLAMA_MODEL": "gemma-4-12b",
+        "LLAMA_MODEL_ALIAS": "gemma-4-12b",
+        "LLAMA_HF_REPO": "unsloth/gemma-4-12b-it-GGUF:Q4_K_M",
+        "LLAMA_CTX_SIZE": "16384",
+        "LLAMA_PARALLEL": "1",
+        "LLAMA_ARG_FLASH_ATTN": "on",
+        "STT_PROVIDER": "nemotron-cpp",
+        "STT_MODEL": "nemotron-speech-streaming"
+      }
+    },
+    "xl": {
+      "rank": 40,
+      "label": "Extra large (26B mixture-of-experts)",
+      "description": "A 26B mixture-of-experts model with its experts in system RAM, so a modest GPU runs a far larger model.",
+      "minimum_budget_gib": 5.5,
+      "minimum_system_memory_gib": 24.0,
+      "target_memory_gib": 5.5,
+      "download_gib": 15.9,
+      "llm": "Gemma 4 26B A4B Q4 (experts on CPU)",
+      "stt": "Nemotron Speech 0.6B Q8 (native streaming)",
+      "tts": "Kokoro 82M",
+      "platforms": ["nvidia-cuda"],
+      "environment": {
+        "LLAMA_MODEL": "gemma-4-26b-a4b",
+        "LLAMA_MODEL_ALIAS": "gemma-4-26b-a4b",
+        "LLAMA_HF_REPO": "unsloth/gemma-4-26B-A4B-it-GGUF:UD-Q4_K_XL",
+        "LLAMA_CTX_SIZE": "16384",
+        "LLAMA_PARALLEL": "1",
+        "LLAMA_ARG_CPU_MOE": "1",
+        "LLAMA_ARG_FLASH_ATTN": "on",
+        "STT_PROVIDER": "nemotron-cpp",
+        "STT_MODEL": "nemotron-speech-streaming"
+      }
     }
   },
   "platforms": {
@@ -105,6 +151,7 @@
       "description": "Desktop NVIDIA GPU using the CUDA Compose image.",
       "runtime": "docker",
       "compose_files": ["docker-compose.yml", "docker-compose.gpu.yml"],
+      "max_profile": "balanced",
       "environment": {
         "DEVICE": "cuda",
         "LLAMA_N_GPU_LAYERS": "999"
