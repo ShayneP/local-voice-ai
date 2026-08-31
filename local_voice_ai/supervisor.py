@@ -14,8 +14,8 @@ import logging
 import os
 import signal
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Awaitable, Callable, Optional
 
 import httpx
 
@@ -27,31 +27,54 @@ class ChildSpec:
     name: str
     argv: list[str]
     env: dict[str, str] = field(default_factory=dict)
-    cwd: Optional[str] = None
-    ready_url: Optional[str] = None
+    cwd: str | None = None
+    ready_url: str | None = None
     ready_timeout: float = 180.0
+    response_check: Callable[[httpx.Response], bool] | None = None
     max_restarts: int = 5
+    # Liveness polling of ready_url after the child comes up. A model process
+    # can keep its socket open while every inference fails (e.g. a CUDA OOM
+    # that corrupts the loaded model), which _watch_exit can never see because
+    # the process does not exit. 0 disables polling for this child.
+    health_interval: float = 30.0
+    health_failures: int = 3
 
 
 @dataclass
 class _Child:
     spec: ChildSpec
-    process: Optional[asyncio.subprocess.Process] = None
+    process: asyncio.subprocess.Process | None = None
     restart_count: int = 0
     ready: bool = False
-    pump_task: Optional[asyncio.Task] = None
-    watch_task: Optional[asyncio.Task] = None
+    pump_task: asyncio.Task | None = None
+    watch_task: asyncio.Task | None = None
+    health_task: asyncio.Task | None = None
 
 
 class Supervisor:
-    def __init__(self, specs: list[ChildSpec]) -> None:
+    def __init__(
+        self, specs: list[ChildSpec], *, sequential_startup: bool = False
+    ) -> None:
         self._children: list[_Child] = [_Child(spec=spec) for spec in specs]
+        self._sequential_startup = sequential_startup
         self._stop_event = asyncio.Event()
-        self._http: Optional[httpx.AsyncClient] = None
+        self._http: httpx.AsyncClient | None = None
 
     @property
     def stopping(self) -> bool:
         return self._stop_event.is_set()
+
+    def status(self) -> list[dict[str, object]]:
+        """Per-child snapshot for the /api/status endpoint (first-boot UI)."""
+        return [
+            {
+                "name": child.spec.name,
+                "ready": child.ready,
+                "running": bool(child.process and child.process.returncode is None),
+                "restarts": child.restart_count,
+            }
+            for child in self._children
+        ]
 
     async def start_all(self) -> None:
         """Spawn every child and wait for each to pass its readiness probe."""
@@ -60,7 +83,15 @@ class Supervisor:
 
         self._http = httpx.AsyncClient(timeout=httpx.Timeout(2.0))
 
-        # Spawn all children in parallel; each one's readiness wait is independent.
+        # Unified-memory systems can run the completed stack but exceed their
+        # memory budget while several model loaders allocate temporary buffers.
+        if self._sequential_startup:
+            for child in self._children:
+                await self._start(child)
+                await self._await_ready(child)
+            return
+
+        # Discrete-GPU and CPU systems favor faster parallel startup.
         await asyncio.gather(*(self._start(child) for child in self._children))
         await asyncio.gather(*(self._await_ready(child) for child in self._children))
 
@@ -110,7 +141,7 @@ class Supervisor:
                 await child.process.wait()
 
         for child in self._children:
-            for task in (child.pump_task, child.watch_task):
+            for task in (child.pump_task, child.watch_task, child.health_task):
                 if task and not task.done():
                     task.cancel()
 
@@ -119,6 +150,18 @@ class Supervisor:
             self._http = None
 
     # ---------------- internals ----------------
+
+    @staticmethod
+    def _response_succeeds(spec: ChildSpec, response: httpx.Response) -> bool:
+        if response.status_code >= 400:
+            return False
+        if spec.response_check is None:
+            return True
+        try:
+            return bool(spec.response_check(response))
+        except Exception:
+            logger.exception("[%s] response check failed", spec.name)
+            return False
 
     async def _start(self, child: _Child) -> None:
         env = {**os.environ, **child.spec.env}
@@ -143,7 +186,7 @@ class Supervisor:
         assert child.process is not None
         prefix = f"[{child.spec.name}]"
 
-        async def pump(stream: Optional[asyncio.StreamReader], level: int) -> None:
+        async def pump(stream: asyncio.StreamReader | None, level: int) -> None:
             if stream is None:
                 return
             while True:
@@ -175,9 +218,10 @@ class Supervisor:
                 )
             try:
                 resp = await self._http.get(child.spec.ready_url)
-                if resp.status_code < 400:
+                if self._response_succeeds(child.spec, resp):
                     child.ready = True
                     logger.info("[%s] ready", child.spec.name)
+                    self._start_health_monitor(child)
                     return
             except (httpx.RequestError, httpx.HTTPError):
                 pass
@@ -190,6 +234,72 @@ class Supervisor:
                 )
             await asyncio.sleep(min(delay, deadline - now))
             delay = min(delay * 1.5, 5.0)
+
+    def _start_health_monitor(self, child: _Child) -> None:
+        """(Re)arm liveness polling for a child that just became ready."""
+        if child.spec.ready_url is None or child.spec.health_interval <= 0:
+            return
+        if child.health_task and not child.health_task.done():
+            child.health_task.cancel()
+        child.health_task = asyncio.create_task(
+            self._monitor_health(child), name=f"health:{child.spec.name}"
+        )
+
+    async def _monitor_health(self, child: _Child) -> None:
+        """Terminate a child that is running but no longer serving.
+
+        Killing it rather than restarting it here is deliberate: the process
+        exit wakes _watch_exit, which already owns backoff and the restart
+        budget, so a wedged child and a crashed one follow one code path.
+        """
+        assert self._http is not None
+        failures = 0
+
+        while not self.stopping:
+            await asyncio.sleep(child.spec.health_interval)
+            if self.stopping or not child.ready:
+                return
+            process = child.process
+            if process is None or process.returncode is not None:
+                return  # already exited; _watch_exit is handling it
+
+            try:
+                resp = await self._http.get(child.spec.ready_url)
+                healthy = self._response_succeeds(child.spec, resp)
+                detail = (
+                    f"HTTP {resp.status_code}"
+                    if resp.status_code >= 400
+                    else "unexpected response"
+                )
+            except (httpx.RequestError, httpx.HTTPError) as exc:
+                healthy = False
+                detail = str(exc) or type(exc).__name__
+
+            if healthy:
+                failures = 0
+                continue
+
+            failures += 1
+            logger.warning(
+                "[%s] health probe failed (%d/%d): %s",
+                child.spec.name,
+                failures,
+                child.spec.health_failures,
+                detail,
+            )
+            if failures >= child.spec.health_failures:
+                logger.error(
+                    "[%s] unhealthy but still running; terminating for restart",
+                    child.spec.name,
+                )
+                # Leave child.ready set: _watch_exit skips restarting a child
+                # that never became ready, so clearing it here would make the
+                # terminate a silent kill. _watch_exit clears it itself.
+                try:
+                    process.terminate()
+                except ProcessLookupError:
+                    pass
+                return
 
     async def _watch_exit(self, child: _Child) -> None:
         assert child.process is not None

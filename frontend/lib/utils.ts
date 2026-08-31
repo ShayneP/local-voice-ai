@@ -27,6 +27,12 @@ export function getStyles(appConfig: AppConfig) {
     .join('\n');
 }
 
+export function getBackendUrl(path: string) {
+  const configured = process.env.NEXT_PUBLIC_BACKEND_URL;
+  const base = configured ? `${configured.replace(/\/$/, '')}/` : `${window.location.origin}/`;
+  return new URL(path.replace(/^\//, ''), base);
+}
+
 /**
  * Get a token source for a sandboxed LiveKit session
  * @param appConfig - The app configuration
@@ -34,7 +40,10 @@ export function getStyles(appConfig: AppConfig) {
  */
 export function getSandboxTokenSource(appConfig: AppConfig) {
   return TokenSource.custom(async () => {
-    const url = new URL(process.env.NEXT_PUBLIC_CONN_DETAILS_ENDPOINT!, window.location.origin);
+    const configuredEndpoint = process.env.NEXT_PUBLIC_CONN_DETAILS_ENDPOINT;
+    const url = configuredEndpoint
+      ? new URL(configuredEndpoint, window.location.origin)
+      : getBackendUrl('/api/connection-details');
     const sandboxId = appConfig.sandboxId ?? '';
     const roomConfig = appConfig.agentName
       ? {

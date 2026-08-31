@@ -6,6 +6,7 @@ Usage:
 """
 
 import argparse
+import gc
 import json
 import logging
 import os
@@ -21,6 +22,8 @@ import uvicorn
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 
+from .degradation import DegradationTracker
+
 os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
 
 logger = logging.getLogger("stt-server")
@@ -28,9 +31,30 @@ logging.basicConfig(level=logging.INFO)
 
 MODEL_NAME = os.getenv("NEMOTRON_MODEL_NAME", "nvidia/nemotron-speech-streaming-en-0.6b")
 MODEL_ID = os.getenv("NEMOTRON_MODEL_ID", "nemotron-speech-streaming")
+FP16 = os.getenv("NEMOTRON_FP16", "1") not in ("0", "false", "no")
+ITN = os.getenv("NEMOTRON_ITN", "1") not in ("0", "false", "no")
 TARGET_SAMPLE_RATE = 16000
 
 asr_model = None
+
+# A CUDA OOM leaves NeMo's decoder unable to serve later requests. Keep this
+# state separate from the ML runtime so CI can test the restart policy without
+# installing Torch and NeMo.
+_degradation = DegradationTracker(fatal_error_types=(torch.cuda.OutOfMemoryError,))
+
+
+def _note_failure(error: BaseException) -> None:
+    """Record a transcription failure, degrading the process if warranted."""
+    if _degradation.note_failure(error):
+        logger.error(
+            "model degraded, reporting unhealthy for restart: %s",
+            _degradation.degraded,
+        )
+
+
+def _note_success() -> None:
+    """Clear the transient-failure run after a transcription succeeds."""
+    _degradation.note_success()
 
 
 def load_model():
@@ -42,8 +66,24 @@ def load_model():
     asr_model.eval()
 
     if torch.cuda.is_available():
+        if FP16:
+            # Halves the weights. Verified to produce identical transcripts on
+            # the benchmark clips; set NEMOTRON_FP16=0 to fall back to fp32.
+            asr_model = asr_model.half()
         asr_model = asr_model.cuda()
-        logger.info("Model on CUDA")
+        # from_pretrained leaves the full checkpoint state_dict reachable from a
+        # load-time stack frame. Once it lands on the GPU that is a second, live
+        # copy of every weight — 2.3GB for this model — that nothing will ever
+        # read. Collecting it here is the single biggest memory win available.
+        freed_from = torch.cuda.memory_allocated()
+        gc.collect()
+        torch.cuda.empty_cache()
+        logger.info(
+            "Model on CUDA (fp16=%s, %d MiB after reclaiming %d MiB)",
+            FP16,
+            torch.cuda.memory_allocated() // 1024 // 1024,
+            (freed_from - torch.cuda.memory_allocated()) // 1024 // 1024,
+        )
     elif torch.backends.mps.is_available():
         try:
             asr_model = asr_model.to("mps")
@@ -102,9 +142,24 @@ def load_audio(audio_bytes: bytes, filename: str) -> np.ndarray:
     return data
 
 
+def _normalize(text: str) -> str:
+    """Spoken numbers to digits, unless disabled. Nemotron transcribes them
+    verbatim; whisper does this inside the model."""
+    if not ITN:
+        return text
+    from local_voice_ai.textnorm import normalize_numbers
+
+    return normalize_numbers(text)
+
+
+def _input_dtype() -> torch.dtype:
+    """Match the loaded weights, so an fp16 model isn't fed fp32 audio."""
+    return next(asr_model.parameters()).dtype
+
+
 def direct_transcribe(audio: np.ndarray) -> str:
     """Run full-file transcription using direct model forward pass."""
-    audio_tensor = torch.tensor(audio).unsqueeze(0).to(asr_model.device)
+    audio_tensor = torch.tensor(audio, dtype=_input_dtype()).unsqueeze(0).to(asr_model.device)
     audio_len = torch.tensor([audio.shape[0]], dtype=torch.long).to(asr_model.device)
 
     with torch.no_grad():
@@ -123,7 +178,10 @@ def direct_transcribe(audio: np.ndarray) -> str:
         )
 
     first_hypothesis = hypotheses[0]
-    return first_hypothesis.text if hasattr(first_hypothesis, "text") else str(first_hypothesis)
+    text = (
+        first_hypothesis.text if hasattr(first_hypothesis, "text") else str(first_hypothesis)
+    )
+    return _normalize(text)
 
 
 def streaming_transcribe(audio: np.ndarray):
@@ -131,7 +189,7 @@ def streaming_transcribe(audio: np.ndarray):
     model = asr_model
     device = model.device
 
-    audio_tensor = torch.tensor(audio).unsqueeze(0).to(device)
+    audio_tensor = torch.tensor(audio, dtype=_input_dtype()).unsqueeze(0).to(device)
     audio_len = torch.tensor([audio.shape[0]], dtype=torch.long).to(device)
 
     with torch.no_grad():
@@ -226,14 +284,30 @@ def streaming_transcribe(audio: np.ndarray):
 
 
 async def sse_generator(audio: np.ndarray):
-    """Generate SSE events from streaming transcription."""
-    full_text = ""
-    for delta in streaming_transcribe(audio):
-        full_text += delta
-        event = {"type": "transcript.text.delta", "delta": delta}
-        yield f"data: {json.dumps(event)}\n\n"
+    """Generate SSE events from streaming transcription.
 
-    done_event = {"type": "transcript.text.done", "text": full_text.strip()}
+    The agent transcribes over this path, so a model that dies here is what a
+    live conversation actually hits; failures must feed the same degradation
+    tracking as the one-shot endpoint. Headers are already sent by the time we
+    fail, so the error is reported as an SSE event rather than a status code.
+    """
+    full_text = ""
+    try:
+        for delta in streaming_transcribe(audio):
+            full_text += delta
+            event = {"type": "transcript.text.delta", "delta": delta}
+            yield f"data: {json.dumps(event)}\n\n"
+    except Exception as error:
+        logger.exception("Streaming transcription failed")
+        _note_failure(error)
+        yield f"data: {json.dumps({'type': 'error', 'error': str(error)})}\n\n"
+        yield "data: [DONE]\n\n"
+        return
+    _note_success()
+
+    # Deltas stay verbatim — a digit run can span several of them, so it can
+    # only be collapsed once the utterance is complete.
+    done_event = {"type": "transcript.text.done", "text": _normalize(full_text.strip())}
     yield f"data: {json.dumps(done_event)}\n\n"
     yield "data: [DONE]\n\n"
 
@@ -275,7 +349,10 @@ async def transcribe(
         text = direct_transcribe(audio)
     except Exception as error:
         logger.exception("Transcription failed")
+        _note_failure(error)
         raise HTTPException(status_code=500, detail=f"Transcription failed: {error}")
+
+    _note_success()
 
     if response_format == "text":
         return PlainTextResponse(content=text)
@@ -311,6 +388,22 @@ async def list_models():
 
 @app.get("/health")
 async def health():
+    """Readiness probe, also used as a liveness probe by the supervisor.
+
+    Reporting only ``asr_model is not None`` was too weak: a CUDA OOM leaves
+    the object in place but permanently unable to run, so the process kept
+    answering "ok" while every transcription 500'd. Returning 503 once the
+    model is known-broken lets the supervisor restart us.
+    """
+    if _degradation.degraded is not None:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "status": "degraded",
+                "reason": _degradation.degraded,
+                "failures": _degradation.consecutive_failures,
+            },
+        )
     return {"status": "ok", "model_loaded": asr_model is not None}
 
 

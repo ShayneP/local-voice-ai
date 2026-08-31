@@ -1,0 +1,160 @@
+{
+  "models": {
+    "lean": {
+      "rank": 5,
+      "label": "Lean (under 5 GB)",
+      "description": "A smaller language model and native streaming speech recognizer that preserve headroom on unified-memory devices.",
+      "minimum_budget_gib": 4.0,
+      "target_memory_gib": 4.7,
+      "download_gib": 2.2,
+      "llm": "Qwen3 1.7B Q4",
+      "stt": "Nemotron Speech 0.6B Q8 (native streaming)",
+      "tts": "Kokoro 82M ONNX FP16",
+      "environment": {
+        "LLAMA_MODEL": "qwen3-1.7b",
+        "LLAMA_MODEL_ALIAS": "qwen3-1.7b",
+        "LLAMA_HF_REPO": "unsloth/Qwen3-1.7B-GGUF:UD-Q4_K_XL",
+        "LLAMA_CTX_SIZE": "4096",
+        "LLAMA_PARALLEL": "1",
+        "STT_PROVIDER": "nemotron-cpp",
+        "STT_MODEL": "nemotron-speech-streaming",
+        "TTS_PROVIDER": "kokoro-onnx",
+        "TURN_DETECTION": "vad",
+        "AGENT_IDLE_PROCESSES": "1"
+      }
+    },
+    "jetson-realtime": {
+      "rank": 6,
+      "label": "Jetson Realtime (under 5 GB)",
+      "description": "A Jetson-native streaming speech stack with quantized weights and conservative unified-memory headroom.",
+      "minimum_budget_gib": 4.0,
+      "target_memory_gib": 4.7,
+      "download_gib": 2.2,
+      "llm": "Qwen3 1.7B Q4",
+      "stt": "Nemotron Speech 0.6B Q8 (native streaming)",
+      "tts": "Kokoro 82M ONNX FP16",
+      "platforms": ["jetson-orin-nano", "jetson"],
+      "environment": {
+        "LLAMA_MODEL": "qwen3-1.7b",
+        "LLAMA_MODEL_ALIAS": "qwen3-1.7b",
+        "LLAMA_HF_REPO": "unsloth/Qwen3-1.7B-GGUF:UD-Q4_K_XL",
+        "LLAMA_CTX_SIZE": "4096",
+        "LLAMA_PARALLEL": "1",
+        "STT_PROVIDER": "nemotron-cpp",
+        "STT_MODEL": "nemotron-speech-streaming",
+        "TTS_PROVIDER": "kokoro-onnx",
+        "TURN_DETECTION": "vad",
+        "AGENT_IDLE_PROCESSES": "1"
+      }
+    },
+    "compact": {
+      "rank": 10,
+      "label": "Compact (under 6 GB)",
+      "description": "The default voice stack with a smaller context window and conservative headroom.",
+      "minimum_budget_gib": 5.0,
+      "target_memory_gib": 5.5,
+      "download_gib": 3.8,
+      "llm": "Gemma 4 E2B QAT Q4",
+      "stt": "Nemotron Speech 0.6B Q8 (native streaming)",
+      "tts": "Kokoro 82M",
+      "environment": {
+        "LLAMA_MODEL": "gemma-4-e2b",
+        "LLAMA_MODEL_ALIAS": "gemma-4-e2b",
+        "LLAMA_HF_REPO": "unsloth/gemma-4-E2B-it-qat-GGUF:UD-Q4_K_XL",
+        "LLAMA_CTX_SIZE": "4096",
+        "LLAMA_PARALLEL": "1",
+        "STT_PROVIDER": "nemotron-cpp",
+        "STT_MODEL": "nemotron-speech-streaming"
+      }
+    },
+    "balanced": {
+      "rank": 20,
+      "label": "Balanced (larger context)",
+      "description": "The same proven models with a 16K context window for longer conversations.",
+      "minimum_budget_gib": 6.5,
+      "target_memory_gib": 6.5,
+      "download_gib": 3.8,
+      "llm": "Gemma 4 E2B QAT Q4",
+      "stt": "Nemotron Speech 0.6B Q8 (native streaming)",
+      "tts": "Kokoro 82M",
+      "environment": {
+        "LLAMA_MODEL": "gemma-4-e2b",
+        "LLAMA_MODEL_ALIAS": "gemma-4-e2b",
+        "LLAMA_HF_REPO": "unsloth/gemma-4-E2B-it-qat-GGUF:UD-Q4_K_XL",
+        "LLAMA_CTX_SIZE": "16384",
+        "LLAMA_PARALLEL": "1",
+        "STT_PROVIDER": "nemotron-cpp",
+        "STT_MODEL": "nemotron-speech-streaming"
+      }
+    }
+  },
+  "platforms": {
+    "linux-cpu": {
+      "label": "CPU",
+      "description": "Portable CPU mode. Compact is preferred because latency matters for voice.",
+      "runtime": "docker",
+      "compose_files": ["docker-compose.yml"],
+      "max_profile": "compact",
+      "environment": {
+        "DEVICE": "cpu",
+        "LLAMA_N_GPU_LAYERS": "0"
+      }
+    },
+    "nvidia-cuda": {
+      "label": "NVIDIA CUDA",
+      "description": "Desktop NVIDIA GPU using the CUDA Compose image.",
+      "runtime": "docker",
+      "compose_files": ["docker-compose.yml", "docker-compose.gpu.yml"],
+      "environment": {
+        "DEVICE": "cuda",
+        "LLAMA_N_GPU_LAYERS": "999"
+      }
+    },
+    "apple-silicon": {
+      "label": "Apple Silicon / Metal",
+      "description": "Native execution so llama.cpp can use Metal and unified memory.",
+      "runtime": "native",
+      "compose_files": [],
+      "environment": {
+        "DEVICE": "mps",
+        "LLAMA_N_GPU_LAYERS": "999"
+      }
+    },
+    "jetson-orin-nano": {
+      "label": "Jetson Orin Nano",
+      "description": "JetPack-aware container execution using the device's unified CPU/GPU memory.",
+      "runtime": "docker",
+      "compose_files": ["docker-compose.yml", "docker-compose.jetson.yml"],
+      "max_profile": "jetson-realtime",
+      "container_download_gib": 5.9,
+      "disk_overhead_gib": 24.0,
+      "supported_jetpack_versions": ["6.2"],
+      "supported_l4t_versions": ["36.4"],
+      "environment": {
+        "DEVICE": "cuda",
+        "LLAMA_N_GPU_LAYERS": "999",
+        "JETSON_LLAMA_BASE_URL": "http://127.0.0.1:11435/v1",
+        "JETSON_LLAMA_BIND_PORT": "11435",
+        "SEQUENTIAL_STARTUP": "1"
+      }
+    },
+    "jetson": {
+      "label": "NVIDIA Jetson",
+      "description": "JetPack-aware container execution using the device's unified CPU/GPU memory.",
+      "runtime": "docker",
+      "compose_files": ["docker-compose.yml", "docker-compose.jetson.yml"],
+      "max_profile": "jetson-realtime",
+      "container_download_gib": 5.9,
+      "disk_overhead_gib": 24.0,
+      "supported_jetpack_versions": ["6.2"],
+      "supported_l4t_versions": ["36.4"],
+      "environment": {
+        "DEVICE": "cuda",
+        "LLAMA_N_GPU_LAYERS": "999",
+        "JETSON_LLAMA_BASE_URL": "http://127.0.0.1:11435/v1",
+        "JETSON_LLAMA_BIND_PORT": "11435",
+        "SEQUENTIAL_STARTUP": "1"
+      }
+    }
+  }
+}

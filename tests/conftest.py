@@ -6,10 +6,25 @@ import os
 
 import pytest
 
-
 _OUR_ENV_PREFIXES = (
-    "LIVEKIT_", "LLAMA_", "STT_", "TTS_", "MANAGE_", "WEB_",
-    "DEVICE", "NEMOTRON_", "VOXBOX_", "FRONTEND_DIR", "KOKORO_", "LOG_LEVEL",
+    "LIVEKIT_",
+    "LLAMA_",
+    "STT_",
+    "TTS_",
+    "MANAGE_",
+    "WEB_",
+    "DEVICE",
+    "NEMOTRON_",
+    "WHISPER_",
+    "WAKE_WORD",
+    "FRONTEND_DIR",
+    "KOKORO_",
+    "LOG_LEVEL",
+    "GATEWAY",
+    "BIND_HOST",
+    "TURN_DETECTION",
+    "AGENT_IDLE_PROCESSES",
+    "CLIENT_ORIGINS",
 )
 
 

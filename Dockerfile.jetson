@@ -1,0 +1,162 @@
+# syntax=docker/dockerfile:1.6
+#
+# Jetson Orin runtime for JetPack 6.2 / L4T 36.4.x.
+#
+# The public base is pinned by digest. It provides Python 3.12, CUDA-enabled
+# PyTorch 2.7, and torchaudio for aarch64 without requiring an NGC login. The
+# desktop Dockerfile cannot be reused because PyPI CUDA wheels target discrete
+# GPUs, not Jetson's L4T/iGPU stack.
+
+ARG JETSON_PYTORCH_IMAGE=docker.io/dustynv/pytorch:2.7-r36.4.0-cu128-24.04@sha256:4bb7f0a3852f86629ed271aaf6c4aa000305cc4e4673b8e9f334668ee1b22bc8
+ARG LIVEKIT_IMAGE=livekit/livekit-server:latest
+
+# ---------------- frontend ----------------
+FROM node:20-slim AS frontend
+WORKDIR /app
+RUN corepack enable
+COPY frontend/package.json frontend/pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
+COPY frontend/ ./
+RUN pnpm run build
+
+# ---------------- Jetson llama.cpp ----------------
+FROM ${JETSON_PYTORCH_IMAGE} AS llama-build
+
+ARG LLAMA_CPP_REF=b3c3b96a139d4ef1bdec926ac17aa040981cfc5d
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        git \
+        libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src/llama.cpp
+RUN git init \
+    && git remote add origin https://github.com/ggml-org/llama.cpp.git \
+    && git fetch --depth 1 origin ${LLAMA_CPP_REF} \
+    && git checkout --detach FETCH_HEAD
+
+# Orin is SM 8.7. A two-job build avoids exhausting an 8 GB Nano while still
+# compiling on-device in a reasonable amount of time. The NVIDIA runtime mounts
+# Jetson driver libraries only when the container starts, so do not execute the
+# CUDA binary during the image build.
+RUN cmake -S . -B build \
+        -DBUILD_SHARED_LIBS=OFF \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_CUDA_ARCHITECTURES=87 \
+        -DGGML_CUDA=ON \
+        -DGGML_NATIVE=OFF \
+        -DLLAMA_BUILD_APP=OFF \
+        -DLLAMA_BUILD_EXAMPLES=OFF \
+        -DLLAMA_BUILD_TESTS=OFF \
+        -DLLAMA_BUILD_TOOLS=ON \
+        -DLLAMA_BUILD_UI=OFF \
+        -DLLAMA_OPENSSL=ON \
+    && cmake --build build --target llama-server --parallel 2 \
+    && test -x build/bin/llama-server
+
+# ---------------- Jetson NeMo-Speech.cpp ----------------
+FROM ${JETSON_PYTORCH_IMAGE} AS nemo-speech-build
+
+ARG NEMO_SPEECH_CPP_REF=4f9676226f667d14608487df744f375db87127f8
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        git \
+        libsentencepiece-dev \
+        libssl-dev \
+        ninja-build \
+        pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src/nemo-speech.cpp
+RUN git init \
+    && git remote add origin https://github.com/NVIDIA/NeMo-Speech.cpp.git \
+    && git fetch --depth 1 origin ${NEMO_SPEECH_CPP_REF} \
+    && git checkout --detach FETCH_HEAD \
+    && git submodule update --init ggml third_party/cpp-httplib llama.cpp
+
+# Build only the native streaming ASR and HTTP/WebSocket surface. Orin is SM
+# 8.7; limiting the build to two jobs keeps the 8 GB Nano responsive.
+RUN scripts/configure.sh cuda-server \
+        -DCMAKE_CUDA_ARCHITECTURES=87 \
+        -DGGML_NATIVE=OFF \
+        -DNEMO_SPEECH_BUILD_DIAR=OFF \
+        -DNEMO_SPEECH_BUILD_TTS=OFF \
+        -DNEMO_SPEECH_BUILD_NMT=OFF \
+        -DNEMO_SPEECH_WITH_NMT=OFF \
+        -DNEMO_SPEECH_BUILD_MIC_CAPTURE=OFF \
+        -DNEMO_SPEECH_WITH_FLASHLIGHT=OFF \
+        -DNEMO_SPEECH_WITH_NORM=OFF \
+    && cmake --build --preset cuda-server --parallel 2 \
+    && cmake --install build/cuda-server --prefix /opt/nemo-speech \
+    && test -x /opt/nemo-speech/bin/nemo-speech
+
+FROM ${LIVEKIT_IMAGE} AS livekit-bin
+
+# ---------------- runtime ----------------
+FROM ${JETSON_PYTORCH_IMAGE} AS runtime
+
+# The upstream base adds NVIDIA package indexes. Application dependencies come
+# from PyPI. Keep the Jetson CUDA wheels and cache downloaded wheels for rebuilds.
+ENV PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_CACHE_DIR=/root/.cache/pip \
+    PIP_CACHE_PURGE=false \
+    PIP_CONFIG_FILE=/dev/null \
+    PIP_INDEX_URL=https://pypi.org/simple \
+    PIP_NO_CACHE_DIR=false \
+    PIP_VERBOSE=0 \
+    SCP_UPLOAD_PASS= \
+    SCP_UPLOAD_URL= \
+    SCP_UPLOAD_USER= \
+    TAR_INDEX_URL= \
+    TWINE_PASSWORD= \
+    TWINE_REPOSITORY_URL= \
+    TWINE_USERNAME= \
+    HF_HOME=/models \
+    XDG_CACHE_HOME=/models
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        ffmpeg \
+        libsentencepiece0 \
+        libsndfile1 \
+        libgomp1 \
+        tini \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY pyproject.toml ./
+COPY local_voice_ai ./local_voice_ai
+
+# A generic pip resolution must not silently replace NVIDIA's Jetson build of
+# torch with a CPU wheel. Fail the image build if that ever happens.
+RUN --mount=type=cache,target=/root/.cache/pip \
+    torch_version="$(python -c 'import torch; print(torch.__version__)')" \
+    && torchaudio_version="$(python -c 'import torchaudio; print(torchaudio.__version__)')" \
+    && python -m pip install ".[ml,whisper]" \
+    && test "$(python -c 'import torch; print(torch.__version__)')" = "${torch_version}" \
+    && test "$(python -c 'import torchaudio; print(torchaudio.__version__)')" = "${torchaudio_version}" \
+    && python -c 'import torch; assert torch.version.cuda; print(torch.__version__, torch.version.cuda)'
+
+COPY --from=llama-build /src/llama.cpp/build/bin/llama-server /usr/local/bin/llama-server
+COPY --from=nemo-speech-build /opt/nemo-speech /opt/nemo-speech
+COPY --from=livekit-bin /livekit-server /usr/local/bin/livekit-server
+
+ENV PATH=/opt/nemo-speech/bin:${PATH} \
+    LD_LIBRARY_PATH=/opt/nemo-speech/lib:${LD_LIBRARY_PATH}
+
+COPY --from=frontend /app/out /app/frontend/out
+ENV FRONTEND_DIR=/app/frontend/out
+
+RUN python -m local_voice_ai.agent download-files || true
+
+ADD https://github.com/livekit-examples/hello-wakeword/raw/main/client/models/hey_livekit.onnx \
+    /app/models/wakeword/hey_livekit.onnx
+
+EXPOSE 8080 7880 7881 7882/udp
+VOLUME ["/models"]
+
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["python", "-m", "local_voice_ai", "serve"]

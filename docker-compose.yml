@@ -13,19 +13,46 @@ services:
         LIVEKIT_IMAGE: ${LIVEKIT_IMAGE:-livekit/livekit-server:latest}
         PYTHON_BASE: ${PYTHON_BASE:-python:3.11-slim}
         TORCH_INDEX_URL: ${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cpu}
+        NEMO_SPEECH_BACKEND: ${NEMO_SPEECH_BACKEND:-cpu}
     env_file:
-      - .env
+      - path: .env
+      # Per-machine settings must reach the container too. The launcher uses
+      # this file for Compose interpolation, but values such as MANAGE_LIVEKIT
+      # and LIVEKIT_NODE_IP are otherwise lost at the container boundary.
+      - path: .env.local
+        required: false
     environment:
       LIVEKIT_URL: ${LIVEKIT_URL:-ws://127.0.0.1:7880}
       LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-devkey}
       LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-secret}
-      STT_PROVIDER: ${STT_PROVIDER:-nemotron}
-      LLAMA_HF_REPO: ${LLAMA_HF_REPO:-unsloth/Qwen3-4B-Instruct-2507-GGUF}
-      LLAMA_MODEL: ${LLAMA_MODEL:-qwen3-4b}
-      LLAMA_MODEL_ALIAS: ${LLAMA_MODEL_ALIAS:-qwen3-4b}
-      LLAMA_CTX_SIZE: ${LLAMA_CTX_SIZE:-16384}
+      CLIENT_ORIGINS: ${CLIENT_ORIGINS:-}
+      STT_PROVIDER: ${STT_PROVIDER:-nemotron-cpp}
+      STT_LANGUAGE: ${STT_LANGUAGE:-en}
+      STT_DEVICE: ${STT_DEVICE:-}
+      STT_MODEL: ${STT_MODEL:-nemotron-speech-streaming}
+      NEMOTRON_CPP_MODEL: ${NEMOTRON_CPP_MODEL:-auto}
+      NEMOTRON_CPP_GPU: ${NEMOTRON_CPP_GPU:-}
+      NEMO_SPEECH_BIN: ${NEMO_SPEECH_BIN:-nemo-speech}
+      NEMOTRON_MODEL_NAME: ${NEMOTRON_MODEL_NAME:-nvidia/nemotron-speech-streaming-en-0.6b}
+      NEMOTRON_MODEL_ID: ${NEMOTRON_MODEL_ID:-nemotron-speech-streaming}
+      NEMOTRON_FP16: ${NEMOTRON_FP16:-1}
+      WHISPER_MODEL: ${WHISPER_MODEL:-Systran/faster-whisper-small}
+      TTS_VOICE: ${TTS_VOICE:-af_nova}
+      TTS_PROVIDER: ${TTS_PROVIDER:-kokoro}
+      TURN_DETECTION: ${TURN_DETECTION:-multilingual}
+      AGENT_IDLE_PROCESSES: ${AGENT_IDLE_PROCESSES:-}
+      WAKE_WORD: ${WAKE_WORD:-}
+      WAKE_WORD_THRESHOLD: ${WAKE_WORD_THRESHOLD:-0.5}
+      LLAMA_HF_REPO: ${LLAMA_HF_REPO:-unsloth/gemma-4-E2B-it-qat-GGUF:UD-Q4_K_XL}
+      LLAMA_OFFLINE: ${LLAMA_OFFLINE:-}
+      LLAMA_MODEL_PATH: ${LLAMA_MODEL_PATH:-}
+      LLAMA_MODEL: ${LLAMA_MODEL:-gemma-4-e2b}
+      LLAMA_MODEL_ALIAS: ${LLAMA_MODEL_ALIAS:-gemma-4-e2b}
+      LLAMA_CTX_SIZE: ${LLAMA_CTX_SIZE:-4096}
+      LLAMA_PARALLEL: ${LLAMA_PARALLEL:-4}
       LLAMA_N_GPU_LAYERS: ${LLAMA_N_GPU_LAYERS:-0}
       DEVICE: ${DEVICE:-cpu}
+      SEQUENTIAL_STARTUP: ${SEQUENTIAL_STARTUP:-0}
       # --- Audio-in half-cascade (optional) -------------------------------
       # Set LLM_AUDIO_INPUT=1 to feed mic audio straight into an audio-capable
       # LLM (Gemma-4-12B by default) and drop the dedicated STT service; the LLM

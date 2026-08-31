@@ -1,10 +1,20 @@
 venv/
+.venv/
 inference/llama/models/
 
 # Per-machine Compose override (e.g. opting this box into the GPU stack).
 # Local convenience only — the committed default stays CPU for clones/CI.
 docker-compose.override.yml
 
+# Per-machine env overrides (model choice, GPU settings). .env stays tracked.
+.env.local
+.local-voice-ai.toml
+.local-voice-ai.toml.tmp
+.local-voice-ai/
+
 # Python cache artifacts
 **/__pycache__/
 *.pyc
+
+# Packaging metadata from editable installs (pip install -e / uv sync)
+*.egg-info/

@@ -30,7 +30,8 @@ interface AppProps {
 
 export function App({ appConfig }: AppProps) {
   const tokenSource = useMemo(() => {
-    return typeof process.env.NEXT_PUBLIC_CONN_DETAILS_ENDPOINT === 'string'
+    return typeof process.env.NEXT_PUBLIC_CONN_DETAILS_ENDPOINT === 'string' ||
+      typeof process.env.NEXT_PUBLIC_BACKEND_URL === 'string'
       ? getSandboxTokenSource(appConfig)
       : TokenSource.endpoint('/api/connection-details');
   }, [appConfig]);

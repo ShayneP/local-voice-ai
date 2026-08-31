@@ -1,0 +1,30 @@
+# JetPack 6.2 / L4T 36.4.x overlay for Jetson Orin.
+# `python3 run.py` selects this file automatically on supported Jetson devices.
+services:
+  app:
+    build:
+      dockerfile: Dockerfile.jetson
+      # JetPack 6.2's kernel omits iptable_raw. Docker 28 bridge endpoints fail
+      # before a RUN instruction starts, so Jetson builds use the host network.
+      network: host
+      entitlements:
+        - network.host
+      args:
+        JETSON_PYTORCH_IMAGE: ${JETSON_PYTORCH_IMAGE:-docker.io/dustynv/pytorch:2.7-r36.4.0-cu128-24.04@sha256:4bb7f0a3852f86629ed271aaf6c4aa000305cc4e4673b8e9f334668ee1b22bc8}
+        LIVEKIT_IMAGE: ${LIVEKIT_IMAGE:-livekit/livekit-server:latest}
+        LLAMA_CPP_REF: ${LLAMA_CPP_REF:-b3c3b96a139d4ef1bdec926ac17aa040981cfc5d}
+        NEMO_SPEECH_CPP_REF: ${NEMO_SPEECH_CPP_REF:-4f9676226f667d14608487df744f375db87127f8}
+    runtime: nvidia
+    # The same kernel gap affects runtime bridge endpoints. The supervisor only
+    # binds the web and LiveKit services to 0.0.0.0. Model services stay on
+    # loopback, so host networking preserves their intended visibility.
+    network_mode: host
+    ports: !reset []
+    shm_size: "1gb"
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: all
+      LLAMA_N_GPU_LAYERS: ${LLAMA_N_GPU_LAYERS:-999}
+      LLAMA_BASE_URL: ${JETSON_LLAMA_BASE_URL:-http://127.0.0.1:11435/v1}
+      LLAMA_BIND_PORT: ${JETSON_LLAMA_BIND_PORT:-11435}
+      DEVICE: ${DEVICE:-cuda}

@@ -1,16 +1,18 @@
-# Single-container GPU (NVIDIA/CUDA) deployment with audio-in half-cascade.
+# NVIDIA GPU overlay. Run with:
 #
-# Unlike docker-compose.audio.yml (the macOS/Metal hybrid that runs the LLM on
-# the host because Docker Desktop has no Metal passthrough), here EVERYTHING —
-# including the Gemma-4 audio LLM — runs inside one container on the GPU.
-#
-# Requires: an NVIDIA GPU + recent driver + the nvidia-container-toolkit
-# (so `docker` can expose the GPU). ~16GB+ VRAM recommended for the 12B at Q4.
-#
-# Usage:
 #   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build
 #
-# First boot downloads the GGUF (~7GB) + mmproj into the `models` volume.
+# Requires the NVIDIA container toolkit (`docker run --gpus all ubuntu nvidia-smi`
+# should print your GPU). This overlay swaps in the CUDA llama.cpp binary and
+# CUDA torch wheels, grants the GPU to the container, and defaults the LLM to
+# full GPU offload + torch services to CUDA.
+#
+# Audio-in half-cascade: add LLM_AUDIO_INPUT=1 (shell env or .env.local) to run
+# the Gemma-4 12B audio LLM fully on the GPU instead of the STT+text-LLM stack —
+# unlike docker-compose.audio.yml (the macOS/Metal hybrid that runs the LLM on
+# the host because Docker Desktop has no Metal passthrough), here everything
+# runs inside one container. ~16GB+ VRAM recommended for the 12B at Q4; the
+# first boot downloads the GGUF (~7GB) + mmproj into the `models` volume.
 services:
   app:
     build:
@@ -25,12 +27,10 @@ services:
         # also run every older NVIDIA arch, so this is the safe default for all GPUs.
         PYTHON_BASE: ${PYTHON_BASE:-nvidia/cuda:12.8.1-runtime-ubuntu24.04}
         TORCH_INDEX_URL: ${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu128}
+        NEMO_SPEECH_BACKEND: ${NEMO_SPEECH_BACKEND:-cuda}
     environment:
-      LLM_AUDIO_INPUT: "1"
-      # Offload the whole model to the GPU (the base default is 0 = CPU).
-      LLAMA_N_GPU_LAYERS: ${LLAMA_N_GPU_LAYERS:-99}
-      DEVICE: cuda
-    # Expose the GPU to the container (needs nvidia-container-toolkit).
+      LLAMA_N_GPU_LAYERS: ${LLAMA_N_GPU_LAYERS:-999}
+      DEVICE: ${DEVICE:-cuda}
     deploy:
       resources:
         reservations:
