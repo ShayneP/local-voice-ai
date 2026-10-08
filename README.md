@@ -39,14 +39,17 @@ Install the additional tools for your platform:
 | Linux CPU      | Docker Engine with Docker Compose                            |
 | Desktop NVIDIA | Docker Engine, Docker Compose, and NVIDIA Container Toolkit  |
 | Jetson Orin    | JetPack 6.2, L4T 36.4, and the NVIDIA Docker runtime         |
-| Apple Silicon  | Python 3.11–3.13, `uv`, `livekit-server`, and `llama-server` |
+| Apple Silicon  | Python 3.11–3.12, `uv`, `livekit-server`, and `llama-server` |
 
 On Apple Silicon, install the native server tools with Homebrew:
 
 ```bash
 brew install livekit llama.cpp
-uv sync --extra ml --extra dev
+uv sync --python 3.12 --extra ml --extra dev
 ```
+
+Use Python 3.12 or 3.11 on macOS: `kaldialign`, a speech recognition
+dependency, has no macOS build for Python 3.13.
 
 The first start needs an internet connection. Later starts reuse downloaded
 model files and native components. Docker also reuses its image layers.
@@ -269,8 +272,8 @@ python3 run.py logs
 
 ## Local development
 
-Local development needs Python 3.11–3.13, `uv`, Node.js 20, pnpm,
-`livekit-server`, and `llama-server`.
+Local development needs Python 3.11–3.13 (3.11–3.12 on macOS), `uv`, Node.js 20,
+pnpm, `livekit-server`, and `llama-server`.
 
 Install the Python environment:
 
